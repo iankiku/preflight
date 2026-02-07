@@ -1,0 +1,11 @@
+{
+  "name": "file-reader",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string", "pattern": "^/allowed/" }
+    },
+    "required": ["path"]
+  },
+  "description": "Reads files from allowed directory"
+}

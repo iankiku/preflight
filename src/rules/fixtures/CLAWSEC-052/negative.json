@@ -1,0 +1,6 @@
+{
+  "settings": {
+    "enableAllProjectMcpServers": false,
+    "mcpServers": ["trusted-server-a", "trusted-server-b"]
+  }
+}

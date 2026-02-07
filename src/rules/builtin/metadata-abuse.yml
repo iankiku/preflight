@@ -1,0 +1,29 @@
+version: "1.0"
+rules:
+  - id: CLAWSEC-012
+    name: always-enabled
+    severity: high
+    category: metadata-abuse
+    patterns:
+      - type: frontmatter
+        field: metadata.openclaw.always
+        equals: true
+    message: "Skill has 'always: true' metadata - will inject into all conversations"
+    remediation: "Remove or set 'metadata.openclaw.always: false' unless absolutely required."
+    metadata:
+      owasp: "LLM05:2025"
+      cwe: "CWE-269"
+
+  - id: CLAWSEC-013
+    name: skillkey-aliasing
+    severity: medium
+    category: metadata-abuse
+    patterns:
+      - type: frontmatter
+        field: metadata.openclaw.skillKey
+        exists: true
+    message: "Custom skillKey detected: may alias or override built-in skills"
+    remediation: "Verify skillKey doesn't conflict with built-in skill names."
+    metadata:
+      owasp: "LLM05:2025"
+      cwe: "CWE-1188"

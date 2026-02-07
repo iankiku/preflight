@@ -1,0 +1,4 @@
+# Exclude documentation and test fixtures from scanning
+docs/
+test-fixtures/
+src/rules/fixtures/

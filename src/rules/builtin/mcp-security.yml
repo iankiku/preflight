@@ -1,0 +1,43 @@
+version: "1.0"
+rules:
+  - id: CLAWSEC-050
+    name: unvalidated-mcp-inputs
+    severity: high
+    category: misconfiguration
+    patterns:
+      - regex: "inputSchema[\\s\\S]*?any"
+        flags: "i"
+      - regex: "arguments\\s*:\\s*\\{\\s*\\}"
+    perFileLimit: true
+    message: "MCP tool with unvalidated inputs detected: '{match}'"
+    remediation: "Define strict input schemas for MCP tool parameters using Zod or JSON Schema."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-20"
+
+  - id: CLAWSEC-051
+    name: overprivileged-mcp-server
+    severity: medium
+    category: misconfiguration
+    patterns:
+      - regex: "allowedTools[\\s\\S]*?\\*"
+        flags: "i"
+      - regex: "permissions\\s*:\\s*\\{[^}]*\\*[^}]*\\}"
+    message: "Overprivileged MCP server configuration: '{match}'"
+    remediation: "Apply principle of least privilege to MCP server tool permissions."
+    metadata:
+      owasp: "LLM05:2025"
+      cwe: "CWE-269"
+
+  - id: CLAWSEC-052
+    name: enable-all-mcp-servers
+    severity: high
+    category: misconfiguration
+    patterns:
+      - regex: "enableAllProjectMcpServers[\"'\\s]*[=:]\\s*true"
+        flags: "i"
+    message: "All project MCP servers enabled — any MCP server in project can execute: '{match}'"
+    remediation: "Explicitly whitelist only required MCP servers instead of enabling all."
+    metadata:
+      owasp: "LLM05:2025"
+      cwe: "CWE-269"

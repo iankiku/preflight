@@ -1,0 +1,115 @@
+version: "1.0"
+rules:
+  - id: CLAWSEC-009
+    name: dangerous-eval
+    severity: critical
+    category: code-execution
+    patterns:
+      - regex: "\\beval\\s*\\("
+        flags: "i"
+      - regex: "\\bexec\\s*\\("
+        flags: "i"
+      - regex: "Function\\s*\\([^)]*\\)\\s*\\("
+    location:
+      include: [scripts]
+    perFileLimit: true
+    message: "Dangerous code evaluation pattern detected: '{match}'"
+    remediation: "Avoid eval/exec. Use safe parsing methods or sandboxed execution."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-94"
+
+  - id: CLAWSEC-010
+    name: command-substitution
+    severity: high
+    category: code-execution
+    patterns:
+      - regex: "\\$\\([^)]+\\)"
+      # Only match backticks that look like shell commands (not JS template literals)
+      - regex: "`[a-zA-Z_][a-zA-Z0-9_]*\\s"
+    location:
+      include: [scripts]
+      exclude:
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.tsx"
+        - "**/*.jsx"
+        - "**/*.mts"
+        - "**/*.mjs"
+    perFileLimit: true
+    message: "Command substitution detected in script: '{match}'"
+    remediation: "Avoid dynamic command execution. Use static, validated commands."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-78"
+
+  - id: CLAWSEC-011
+    name: subprocess-shell
+    severity: high
+    category: code-execution
+    patterns:
+      - regex: "subprocess\\.(call|run|Popen)\\s*\\([^)]*shell\\s*=\\s*True"
+        flags: "i"
+      - regex: "os\\.system\\s*\\("
+        flags: "i"
+      - regex: "child_process\\.(exec|spawn)\\s*\\("
+        flags: "i"
+    location:
+      include: [scripts]
+    requiresContext: "(import|require|from)\\s.*(subprocess|child_process|os)"
+    perFileLimit: true
+    message: "Shell command execution pattern detected: '{match}'"
+    remediation: "Use parameterized commands without shell=True."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-78"
+
+  - id: CLAWSEC-030
+    name: python-pickle-loads
+    severity: high
+    category: code-execution
+    patterns:
+      - regex: "pickle\\.(loads?|Unpickler)\\s*\\("
+    location:
+      include: [scripts]
+    perFileLimit: true
+    message: "Unsafe deserialization via pickle detected: '{match}'"
+    remediation: "Avoid pickle for untrusted data. Use json or a safe serialization format."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-502"
+
+  - id: CLAWSEC-031
+    name: unsafe-yaml-load
+    severity: high
+    category: code-execution
+    patterns:
+      - regex: "yaml\\.load\\s*\\([^)]*\\)(?!.*Loader)"
+      - regex: "yaml\\.unsafe_load\\s*\\("
+    location:
+      include: [scripts]
+    perFileLimit: true
+    message: "Unsafe YAML deserialization detected: '{match}'"
+    remediation: "Use yaml.safe_load() instead of yaml.load() or yaml.unsafe_load()."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-502"
+
+  - id: CLAWSEC-032
+    name: sql-injection
+    severity: critical
+    category: code-execution
+    patterns:
+      - regex: "execute\\s*\\(\\s*f['\"]"
+      - regex: "execute\\s*\\(\\s*['\"]\\s*(?:SELECT|INSERT|UPDATE|DELETE).*\\+\\s*"
+        flags: "i"
+      - regex: "(?:SELECT|INSERT|UPDATE|DELETE)\\s+.*%s"
+        flags: "i"
+    location:
+      include: [scripts]
+    perFileLimit: true
+    message: "Potential SQL injection via string formatting detected: '{match}'"
+    remediation: "Use parameterized queries or prepared statements instead of string concatenation."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-89"

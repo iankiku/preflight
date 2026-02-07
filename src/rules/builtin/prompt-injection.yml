@@ -1,0 +1,89 @@
+version: "1.0"
+rules:
+  - id: CLAWSEC-001
+    name: instruction-override
+    severity: high
+    category: prompt-injection
+    patterns:
+      - regex: "ignore\\s+(all\\s+)?(previous|above|prior|earlier)\\s+(instructions?|rules?|guidelines?)"
+        flags: "i"
+    perFileLimit: true
+    message: "Prompt injection detected: instruction override pattern '{match}'"
+    remediation: "Remove or escape instruction override language. Use context delimiters instead."
+    metadata:
+      owasp: "LLM01:2025"
+      cwe: "CWE-77"
+
+  - id: CLAWSEC-002
+    name: system-prompt-leak
+    severity: high
+    category: prompt-injection
+    patterns:
+      - regex: "(reveal|show|print|display|output|repeat)\\s+(your|the)?\\s*(system\\s*prompt|instructions|rules)"
+        flags: "i"
+    perFileLimit: true
+    message: "System prompt extraction attempt detected: '{match}'"
+    remediation: "Remove prompt extraction language from skill content."
+    metadata:
+      owasp: "LLM01:2025"
+      cwe: "CWE-200"
+
+  - id: CLAWSEC-003
+    name: role-hijacking
+    severity: high
+    category: prompt-injection
+    patterns:
+      - regex: "(you\\s+are\\s+(now|actually)|act\\s+as|pretend\\s+to\\s+be|roleplay\\s+as)\\s+[a-z]+"
+        flags: "i"
+    perFileLimit: true
+    message: "Role hijacking attempt detected: '{match}'"
+    remediation: "Avoid language that attempts to change the AI's persona or role."
+    metadata:
+      owasp: "LLM01:2025"
+      cwe: "CWE-284"
+
+  - id: CLAWSEC-004
+    name: jailbreak-patterns
+    severity: critical
+    category: prompt-injection
+    patterns:
+      - regex: "(\\bDAN\\b|\\bdo\\s+anything\\s+now\\b|\\bdeveloper\\s+mode\\b|\\bjailbreak\\b)"
+        flags: "i"
+      - regex: "\\bbypass\\s+(safety|filter|restriction|guardrail)s?\\b"
+        flags: "i"
+    location:
+      exclude:
+        - "**/rules/**/*.yml"
+        - "**/fixtures/**"
+    perFileLimit: true
+    message: "Known jailbreak pattern detected: '{match}'"
+    remediation: "Remove jailbreak attempts from skill content."
+    metadata:
+      owasp: "LLM01:2025"
+      cwe: "CWE-863"
+
+  - id: CLAWSEC-005
+    name: delimiter-escape
+    severity: medium
+    category: prompt-injection
+    patterns:
+      - regex: "(```|</?system>|</?user>|</?assistant>|\\[INST\\]|\\[/INST\\])"
+        flags: "i"
+    location:
+      include: [body]
+      exclude:
+        - "**/*.md"
+        - "**/README*"
+        - "**/docs/**"
+        - "**/rules/**/*.yml"
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.tsx"
+        - "**/*.jsx"
+    perFileLimit: true
+    message: "Potential delimiter escape detected: '{match}'"
+    remediation: "Review use of delimiters to ensure they don't manipulate prompt structure."
+    metadata:
+      owasp: "LLM01:2025"
+      cwe: "CWE-74"
+

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "my-server": {
+      "allowedTools": ["*"],
+      "endpoint": "http://localhost:3000"
+    }
+  }
+}

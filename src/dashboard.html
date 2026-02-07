@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ClawSec Security Report</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "primary": "#1337ec",
+        "background-dark": "#101322",
+        "surface-dark": "#161927",
+        "surface-darker": "#0d0f1a",
+        "border-dark": "#282b39",
+      },
+      fontFamily: {
+        "display": ["Space Grotesk", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        "body": ["Noto Sans", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        "mono": ["JetBrains Mono", "SF Mono", "Monaco", "Consolas", "monospace"],
+      },
+      borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+    },
+  },
+}
+</script>
+<style>
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #101322; }
+::-webkit-scrollbar-thumb { background: #282b39; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3b3f54; }
+.finding-detail { display: none; }
+.finding-row.expanded .finding-detail { display: block; }
+.finding-row.expanded .expand-icon { transform: rotate(180deg); }
+.view-hidden { display: none !important; }
+.finding-row.suppressed { opacity: 0.4; border-left-color: #475569 !important; }
+.finding-row.suppressed:hover { opacity: 0.7; }
+</style>
+</head>
+<body class="bg-background-dark text-white font-display overflow-hidden h-screen flex">
+<script id="clawsec-data" type="application/json">__CLAWSEC_DATA__</script>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="w-[260px] h-full bg-[#111218] flex flex-col border-r border-border-dark shrink-0"></aside>
+
+<!-- Main Content -->
+<main id="main" class="flex-1 flex flex-col h-full overflow-hidden relative"></main>
+
+<script>
+// ============================================================================
+// Data
+// ============================================================================
+const data = JSON.parse(document.getElementById('clawsec-data').textContent);
+
+// ============================================================================
+// Suppressions State
+// ============================================================================
+const suppressedKeys = new Set();
+const existingSuppressions = data.suppressions || [];
+existingSuppressions.forEach(s => suppressedKeys.add(s.ruleId + '::' + s.file));
+const newSuppressions = [];
+
+// ============================================================================
+// Helpers
+// ============================================================================
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function shortPath(p) {
+  const parts = p.split('/');
+  return parts.length > 3 ? '.../' + parts.slice(-2).join('/') : p;
+}
+
+function timeAgo(ts) {
+  const d = new Date(ts);
+  const now = Date.now();
+  const diff = Math.floor((now - d.getTime()) / 1000);
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' hours ago';
+  return d.toLocaleDateString();
+}
+
+function gradeInfo(score) {
+  if (score >= 90) return { letter: 'A', color: '#22c55e', bg: 'green' };
+  if (score >= 75) return { letter: 'B', color: '#3b82f6', bg: 'blue' };
+  if (score >= 60) return { letter: 'C', color: '#f97316', bg: 'orange' };
+  if (score >= 40) return { letter: 'D', color: '#ef4444', bg: 'red' };
+  return { letter: 'F', color: '#ef4444', bg: 'red' };
+}
+
+function sevColor(s) {
+  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6', info: '#64748b' }[s] || '#64748b';
+}
+
+function sevBgClass(s) {
+  return {
+    critical: 'bg-red-500/10 border-red-500/20 text-red-500',
+    high: 'bg-orange-500/10 border-orange-500/20 text-orange-500',
+    medium: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500',
+    low: 'bg-blue-500/10 border-blue-500/20 text-blue-500',
+    info: 'bg-slate-500/10 border-slate-500/20 text-slate-500',
+  }[s] || 'bg-slate-500/10 border-slate-500/20 text-slate-500';
+}
+
+function sevBorderClass(s) {
+  return { critical: 'border-red-500', high: 'border-orange-500', medium: 'border-yellow-500', low: 'border-blue-500', info: 'border-slate-500' }[s] || 'border-slate-500';
+}
+
+function sevTextClass(s) {
+  return { critical: 'text-red-500', high: 'text-orange-500', medium: 'text-yellow-500', low: 'text-blue-500', info: 'text-slate-500' }[s] || 'text-slate-500';
+}
+
+function sevIcon(s) {
+  return { critical: 'warning', high: 'lock_open', medium: 'smart_toy', low: 'info', info: 'help' }[s] || 'info';
+}
+
+function sevDotClass(s) {
+  return { critical: 'text-red-500', high: 'text-orange-500', medium: 'text-yellow-500', low: 'text-blue-500', info: 'text-slate-500' }[s] || 'text-slate-500';
+}
+
+function fileIcon(ext) {
+  if (ext === '.md') return { icon: 'markdown', color: 'text-slate-400' };
+  if (ext === '.py') return { icon: 'code', color: 'text-yellow-500' };
+  if (ext === '.js' || ext === '.ts') return { icon: 'javascript', color: 'text-yellow-400' };
+  if (ext === '.json' || ext === '.yaml' || ext === '.yml') return { icon: 'data_object', color: 'text-green-500' };
+  if (ext === '.sh') return { icon: 'terminal', color: 'text-green-400' };
+  return { icon: 'description', color: 'text-slate-400' };
+}
+
+// ============================================================================
+// Suppression Helpers
+// ============================================================================
+function toRelativePath(filePath) {
+  // Normalize to CWD-relative path (suppressions use CWD-relative paths)
+  // scanRoot may be a subdirectory; we need paths relative to where .clawsec/ lives
+  // The CWD is the parent of scanRoot when scanning a subdirectory
+  // For absolute paths, strip the common prefix up to the project root
+  if (filePath.startsWith('/')) {
+    // Find the project root (parent of .clawsec/) by walking up from scanRoot
+    // Heuristic: use the longest prefix that matches the beginning of scanRoot
+    const scanParts = data.scanRoot.split('/');
+    // Try progressively shorter prefixes to find the project root
+    // The .clawsec dir is at the project root, which is the CWD
+    // We assume CWD is a prefix of scanRoot, so use shortest matching prefix
+    for (let i = scanParts.length; i >= 1; i--) {
+      const prefix = scanParts.slice(0, i).join('/');
+      if (filePath.startsWith(prefix + '/')) {
+        return filePath.slice(prefix.length + 1);
+      }
+    }
+  }
+  return filePath;
+}
+
+function suppressionKey(ruleId, file) {
+  return ruleId + '::' + toRelativePath(file);
+}
+
+function toggleSuppression(ruleId, file) {
+  const key = suppressionKey(ruleId, file);
+  const relPath = toRelativePath(file);
+
+  if (suppressedKeys.has(key)) {
+    suppressedKeys.delete(key);
+    const idx = newSuppressions.findIndex(s => s.ruleId === ruleId && s.file === relPath);
+    if (idx !== -1) newSuppressions.splice(idx, 1);
+  } else {
+    suppressedKeys.add(key);
+    const alreadyExists = existingSuppressions.some(s => s.ruleId === ruleId && s.file === relPath);
+    if (!alreadyExists) {
+      newSuppressions.push({ ruleId, file: relPath, suppressedAt: new Date().toISOString() });
+    }
+  }
+
+  // Update visual state
+  document.querySelectorAll('.finding-row').forEach(row => {
+    if (row.dataset.rule === ruleId && toRelativePath(row.dataset.file) === relPath) {
+      const isSup = suppressedKeys.has(key);
+      row.classList.toggle('suppressed', isSup);
+      const btn = row.querySelector('.suppress-btn');
+      if (btn) {
+        btn.textContent = isSup ? 'Undo Safe' : 'Mark Safe';
+        btn.className = 'suppress-btn px-2.5 py-1 rounded-md text-xs font-medium border transition-colors '
+          + (isSup
+            ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
+            : 'border-slate-600 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-500');
+      }
+    }
+  });
+
+  updateSuppressionsBar();
+  if (currentView === 'overview') showView('overview');
+
+  // Auto-save in server mode
+  detectServerMode().then(isServer => {
+    if (isServer) saveSuppressions();
+  });
+}
+
+function updateSuppressionsBar() {
+  const count = suppressedKeys.size;
+  let bar = document.getElementById('suppressions-bar');
+
+  if (count === 0) {
+    if (bar) bar.remove();
+    return;
+  }
+
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'suppressions-bar';
+    bar.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-3 rounded-xl bg-surface-dark border border-border-dark shadow-2xl';
+    document.body.appendChild(bar);
+  }
+
+  const nc = newSuppressions.length;
+  const isServer = serverMode === true;
+  const saveBtn = isServer
+    ? '<span class="text-xs text-green-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span>Auto-saved</span>'
+    : '<button onclick="saveSuppressions()" class="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2">'
+      + '<span class="material-symbols-outlined text-sm">download</span>Save</button>';
+
+  bar.innerHTML = '<span class="material-symbols-outlined text-yellow-500">shield</span>'
+    + '<span class="text-sm text-slate-300"><span class="text-white font-bold">' + count + '</span> finding'
+    + (count !== 1 ? 's' : '') + ' suppressed'
+    + (nc > 0 ? ' <span class="text-yellow-500">(' + nc + ' new)</span>' : '')
+    + '</span>'
+    + saveBtn;
+}
+
+let serverMode = null;
+
+async function detectServerMode() {
+  if (serverMode !== null) return serverMode;
+  try {
+    const res = await fetch('/api/health');
+    serverMode = res.ok;
+  } catch {
+    serverMode = false;
+  }
+  return serverMode;
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium shadow-lg';
+  t.style.transition = 'opacity 0.3s';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2000);
+}
+
+async function saveSuppressions() {
+  const merged = [...existingSuppressions];
+  for (const s of newSuppressions) {
+    if (!merged.some(m => m.ruleId === s.ruleId && m.file === s.file)) merged.push(s);
+  }
+  const final = merged.filter(s => suppressedKeys.has(s.ruleId + '::' + s.file));
+  const output = { version: '1', suppressions: final };
+
+  const isServer = await detectServerMode();
+  if (isServer) {
+    try {
+      const res = await fetch('/api/suppressions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(output),
+      });
+      if (res.ok) {
+        showToast('Saved to .clawsec/suppressions.json');
+        return;
+      }
+    } catch {}
+  }
+
+  // Fallback: download file
+  const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'suppressions.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// Derived Data
+// ============================================================================
+const grade = gradeInfo(data.score);
+const total = data.summary.total || 0;
+
+// Group findings by file
+const fileMap = new Map();
+data.findings.forEach(f => {
+  const key = f.location.file;
+  if (!fileMap.has(key)) fileMap.set(key, []);
+  fileMap.get(key).push(f);
+});
+
+// Sort files: worst severity first
+const sevOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+const filesWithFindings = [...fileMap.entries()]
+  .map(([file, findings]) => ({
+    file,
+    findings,
+    worstSev: findings.reduce((w, f) => sevOrder[f.severity] < sevOrder[w] ? f.severity : w, 'info'),
+    count: findings.length,
+  }))
+  .sort((a, b) => sevOrder[a.worstSev] - sevOrder[b.worstSev]);
+
+// Group by rule for the table
+const ruleMap = new Map();
+data.findings.forEach(f => {
+  const key = f.ruleId;
+  if (!ruleMap.has(key)) ruleMap.set(key, { ruleId: f.ruleId, ruleName: f.ruleName, severity: f.severity, category: f.category, message: f.message, remediation: f.remediation, findings: [] });
+  ruleMap.get(key).findings.push(f);
+});
+const ruleGroups = [...ruleMap.values()].sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity]);
+
+// Category counts
+const catMap = {};
+data.findings.forEach(f => { catMap[f.category] = (catMap[f.category] || 0) + 1; });
+const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+
+// ============================================================================
+// Render Sidebar
+// ============================================================================
+function renderSidebar() {
+  let fileItems = '';
+
+  filesWithFindings.forEach(({ file, worstSev, count }) => {
+    const name = shortPath(file);
+    const dot = worstSev === 'info' ? 'check_circle' : 'circle';
+    const sevCls = sevDotClass(worstSev);
+    const label = count === 1 ? '1 issue' : count + ' issues';
+
+    fileItems += `
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 transition-all group"
+         onclick="event.preventDefault(); scrollToFile('${esc(file)}')">
+        <span class="material-symbols-outlined ${sevCls} text-[20px]" style="font-variation-settings: 'FILL' 1">${dot}</span>
+        <div class="flex flex-col flex-1 min-w-0">
+          <span class="text-sm font-medium truncate">${esc(name)}</span>
+          <span class="text-[10px] text-slate-500">${esc(label)}</span>
+        </div>
+      </a>`;
+  });
+
+  return `
+    <div class="p-6 flex items-center gap-3">
+      <div class="size-10 rounded-lg bg-gradient-to-br from-primary to-blue-700 flex items-center justify-center text-white shadow-lg shadow-primary/20">
+        <span class="material-symbols-outlined text-2xl">pets</span>
+      </div>
+      <div class="flex flex-col">
+        <h1 class="text-white text-lg font-bold leading-none tracking-tight">ClawSec</h1>
+        <p class="text-slate-400 text-xs font-medium mt-1">Security Scanner</p>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-6">
+      <div class="flex flex-col gap-1">
+        <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Menu</p>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary text-white shadow-md shadow-primary/10 transition-all"
+           onclick="event.preventDefault(); showView('overview')">
+          <span class="material-symbols-outlined text-[22px]">dashboard</span>
+          <span class="text-sm font-medium">Overview</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+           onclick="event.preventDefault(); showView('findings')">
+          <span class="material-symbols-outlined text-[22px]">bug_report</span>
+          <span class="text-sm font-medium">All Findings</span>
+        </a>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Files with Issues</p>
+        ${fileItems || '<p class="px-3 text-sm text-slate-500">No issues found</p>'}
+      </div>
+    </div>
+
+    <div class="p-4 border-t border-border-dark">
+      <div class="flex items-center gap-3 p-2 rounded-lg bg-surface-dark border border-border-dark">
+        <div class="size-8 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center">
+          <span class="material-symbols-outlined text-slate-400 text-sm">terminal</span>
+        </div>
+        <div class="flex flex-col overflow-hidden">
+          <p class="text-sm font-medium text-white truncate">${esc(data.scanRoot.split('/').pop() || 'Project')}</p>
+          <p class="text-xs text-slate-400 truncate">${data.filesScanned} files scanned</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ============================================================================
+// Render Overview View
+// ============================================================================
+function renderOverview() {
+  const pct = Math.min(100, Math.max(0, data.score));
+
+  // Severity breakdown bars
+  let breakdownRows = '';
+  const sevNames = ['critical', 'high', 'medium', 'low', 'info'];
+  const sevBarColors = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-blue-500', info: 'bg-slate-500' };
+  sevNames.forEach(sev => {
+    const count = data.summary[sev] || 0;
+    const barPct = total > 0 ? Math.round((count / total) * 100) : 0;
+    breakdownRows += `
+      <div class="grid grid-cols-[100px_1fr_40px_40px] items-center gap-4">
+        <span class="text-sm font-medium text-slate-300 capitalize">${sev}</span>
+        <div class="h-3 w-full bg-background-dark rounded-full overflow-hidden">
+          <div class="h-full ${sevBarColors[sev]} rounded-full transition-all duration-500" style="width: ${barPct}%"></div>
+        </div>
+        <span class="text-sm font-bold text-white text-right">${count}</span>
+        <span class="text-xs font-medium text-slate-500 text-right">${barPct}%</span>
+      </div>`;
+  });
+
+  // Top issues table rows
+  let tableRows = '';
+  ruleGroups.slice(0, 10).forEach((rg, i) => {
+    const filePaths = [...new Set(rg.findings.map(f => f.location.file))];
+    const fileChips = filePaths.slice(0, 2).map(f => {
+      const ext = f.split('.').pop() || '';
+      return `<div class="size-8 rounded-full bg-slate-800 border border-border-dark flex items-center justify-center text-[10px] text-slate-400" title="${esc(f)}">${esc(ext)}</div>`;
+    }).join('');
+    const moreFiles = filePaths.length > 2 ? `<div class="size-8 rounded-full bg-slate-800 border border-border-dark flex items-center justify-center text-[10px] text-slate-400">+${filePaths.length - 2}</div>` : '';
+
+    tableRows += `
+      <tr class="group hover:bg-white/[0.02] transition-colors cursor-pointer" onclick="showView('findings'); setTimeout(function(){ expandRule('${esc(rg.ruleId)}') }, 100)">
+        <td class="py-4 px-6">
+          <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border ${sevBgClass(rg.severity)}">
+            <span class="size-1.5 rounded-full" style="background: ${sevColor(rg.severity)}"></span>
+            <span class="text-xs font-medium capitalize">${esc(rg.severity)}</span>
+          </div>
+        </td>
+        <td class="py-4 px-6">
+          <div class="flex flex-col">
+            <span class="text-sm font-medium text-white">${esc(rg.ruleName)}</span>
+            <span class="text-xs text-slate-500">${esc(rg.ruleId)} &middot; ${esc(rg.category)}</span>
+          </div>
+        </td>
+        <td class="py-4 px-6 text-center">
+          <span class="text-sm font-medium text-slate-300">${rg.findings.length}</span>
+        </td>
+        <td class="py-4 px-6">
+          <div class="flex -space-x-2">${fileChips}${moreFiles}</div>
+        </td>
+        <td class="py-4 px-6 text-right">
+          <button class="text-slate-500 hover:text-white transition-colors">
+            <span class="material-symbols-outlined">chevron_right</span>
+          </button>
+        </td>
+      </tr>`;
+  });
+
+  return `
+    <div class="flex-1 overflow-y-auto p-6 md:p-10">
+      <div class="max-w-6xl mx-auto flex flex-col gap-8">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-3xl font-bold text-white tracking-tight">Security Report</h2>
+            <div class="flex items-center gap-2 text-slate-400">
+              <span class="material-symbols-outlined text-sm">schedule</span>
+              <span class="text-sm">Scanned ${esc(timeAgo(data.timestamp))} &middot; ${esc(data.duration)}ms</span>
+            </div>
+          </div>
+          <div class="flex gap-3">
+            <button onclick="exportJson()" class="px-4 py-2 rounded-lg border border-border-dark bg-surface-dark hover:bg-border-dark text-slate-300 text-sm font-medium transition-colors">
+              Export JSON
+            </button>
+          </div>
+        </div>
+
+        <!-- Grade & Stats -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Grade Card -->
+          <div class="lg:col-span-4 bg-surface-dark border border-border-dark rounded-xl p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden group">
+            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <span class="material-symbols-outlined text-white" style="font-size: 120px">verified_user</span>
+            </div>
+            <h3 class="text-lg font-medium text-slate-200 z-10">Security Grade</h3>
+            <div class="relative size-40 rounded-full flex items-center justify-center z-10 shadow-2xl"
+                 style="background: conic-gradient(${grade.color} ${pct}%, #282b39 0); box-shadow: 0 25px 50px -12px ${grade.color}15;">
+              <div class="absolute inset-3 bg-surface-dark rounded-full flex flex-col items-center justify-center border border-border-dark">
+                <span class="text-5xl font-bold text-white tracking-tighter">${grade.letter}</span>
+                <span class="text-sm font-medium mt-1" style="color: ${grade.color}">${data.score}/100</span>
+              </div>
+            </div>
+            <p class="text-center text-sm text-slate-400 z-10 max-w-[80%]">
+              ${total > 0
+                ? `Your project has <span class="text-white font-medium">${data.summary.critical} critical</span> and <span class="text-white font-medium">${data.summary.high} high</span> severity issues.`
+                : '<span class="text-green-400 font-medium">No security issues detected.</span>'}
+            </p>
+          </div>
+
+          <!-- Stats Cards -->
+          <div class="lg:col-span-8 grid grid-cols-2 gap-4">
+            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+              <div class="flex justify-between items-start">
+                <span class="text-slate-400 text-sm font-medium">Files Scanned</span>
+                <span class="material-symbols-outlined text-slate-500">folder_open</span>
+              </div>
+              <div class="flex items-baseline gap-2 mt-4">
+                <span class="text-3xl font-bold text-white">${data.filesScanned}</span>
+                <span class="text-xs text-slate-500 font-medium">files</span>
+              </div>
+            </div>
+            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+              <div class="flex justify-between items-start">
+                <span class="text-slate-400 text-sm font-medium">Rules Applied</span>
+                <span class="material-symbols-outlined text-slate-500">rule</span>
+              </div>
+              <div class="flex items-baseline gap-2 mt-4">
+                <span class="text-3xl font-bold text-white">${data.rulesApplied}</span>
+                <span class="text-xs text-slate-500 font-medium">rules</span>
+              </div>
+            </div>
+            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+              <div class="flex justify-between items-start">
+                <span class="text-slate-400 text-sm font-medium">Total Findings</span>
+                <span class="material-symbols-outlined text-slate-500">bug_report</span>
+              </div>
+              <div class="flex items-baseline gap-2 mt-4">
+                <span class="text-3xl font-bold text-white">${total}</span>
+                <span class="text-xs ${data.summary.critical > 0 ? 'text-red-400' : 'text-slate-500'} font-medium">${data.summary.critical > 0 ? data.summary.critical + ' critical' : 'findings'}</span>
+              </div>
+            </div>
+            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+              <div class="flex justify-between items-start">
+                <span class="text-slate-400 text-sm font-medium">Scan Time</span>
+                <span class="material-symbols-outlined text-slate-500">timer</span>
+              </div>
+              <div class="flex items-baseline gap-2 mt-4">
+                <span class="text-3xl font-bold text-white">${data.duration}</span>
+                <span class="text-xs text-slate-500 font-medium">ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Suppressed Banner -->
+        ${(data.suppressedCount || suppressedKeys.size) ? `
+        <div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 flex items-center gap-3">
+          <span class="material-symbols-outlined text-yellow-500">shield</span>
+          <span class="text-sm text-slate-300">
+            <span class="text-yellow-500 font-bold">${suppressedKeys.size || data.suppressedCount}</span>
+            finding${(suppressedKeys.size || data.suppressedCount) !== 1 ? 's' : ''} suppressed (marked safe)
+          </span>
+        </div>` : ''}
+
+        <!-- Severity Breakdown -->
+        <div class="bg-surface-dark border border-border-dark rounded-xl p-6">
+          <div class="flex items-center justify-between mb-6">
+            <h3 class="text-lg font-bold text-white">Severity Breakdown</h3>
+            <button onclick="showView('findings')" class="text-xs text-primary hover:text-blue-400 font-medium">View all findings</button>
+          </div>
+          <div class="flex flex-col gap-5">
+            ${breakdownRows}
+          </div>
+        </div>
+
+        <!-- Top Issues Table -->
+        ${ruleGroups.length > 0 ? `
+        <div class="bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
+          <div class="p-6 border-b border-border-dark flex justify-between items-center">
+            <h3 class="text-lg font-bold text-white">Top Issues Detected</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-background-dark/50 border-b border-border-dark">
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[120px]">Severity</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider">Rule</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider text-center w-[100px]">Count</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[200px]">Files</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border-dark">
+                ${tableRows}
+              </tbody>
+            </table>
+          </div>
+          ${ruleGroups.length > 10 ? `
+          <div class="p-4 border-t border-border-dark bg-background-dark/30 flex justify-center">
+            <button onclick="showView('findings')" class="text-sm text-slate-400 hover:text-white font-medium flex items-center gap-1 transition-colors">
+              View all ${ruleGroups.length} rules
+              <span class="material-symbols-outlined text-sm">arrow_forward</span>
+            </button>
+          </div>` : ''}
+        </div>` : `
+        <div class="bg-surface-dark border border-border-dark rounded-xl p-16 flex flex-col items-center justify-center gap-4">
+          <span class="material-symbols-outlined text-green-500" style="font-size: 48px">check_circle</span>
+          <h3 class="text-xl font-bold text-white">All Clear</h3>
+          <p class="text-slate-400 text-sm">No security findings detected in your project.</p>
+        </div>`}
+
+        <div class="h-10"></div>
+      </div>
+    </div>`;
+}
+
+// ============================================================================
+// Render Findings View (Detail)
+// ============================================================================
+function renderFindings() {
+  let findingCards = '';
+
+  // Build all findings sorted by severity then file
+  const sortedFindings = [...data.findings].sort((a, b) => {
+    const sd = sevOrder[a.severity] - sevOrder[b.severity];
+    if (sd !== 0) return sd;
+    return a.location.file.localeCompare(b.location.file);
+  });
+
+  sortedFindings.forEach((f, i) => {
+    const snippetLines = f.location.snippet ? esc(f.location.snippet).split('\n') : [];
+    const ctxBefore = (f.location.contextBefore || []).map(l => esc(l));
+    const ctxAfter = (f.location.contextAfter || []).map(l => esc(l));
+    const startLine = f.location.startLine || 1;
+
+    // VS Code link
+    const vscodePath = f.location.file.startsWith('/') ? f.location.file : data.scanRoot + '/' + f.location.file;
+    const vscodeLink = 'vscode://file/' + encodeURI(vscodePath) + ':' + startLine;
+
+    let codeHtml = '';
+    if (ctxBefore.length > 0 || snippetLines.length > 0 || ctxAfter.length > 0) {
+      // Build all lines: before + match + after
+      const allLineData = [];
+      const ctxStartLine = startLine - ctxBefore.length;
+
+      // Context before
+      ctxBefore.forEach((line, idx) => {
+        allLineData.push({ ln: ctxStartLine + idx, text: line, type: 'context' });
+      });
+
+      // Matched lines
+      snippetLines.forEach((line, idx) => {
+        allLineData.push({ ln: startLine + idx, text: line, type: 'match' });
+      });
+
+      // Context after
+      const afterStart = startLine + snippetLines.length;
+      ctxAfter.forEach((line, idx) => {
+        allLineData.push({ ln: afterStart + idx, text: line, type: 'context' });
+      });
+
+      const lineNums = allLineData.map(d => {
+        if (d.type === 'match') {
+          return '<span class="text-red-400 font-bold bg-red-500/10 -mr-4 pr-4 rounded-l">' + d.ln + '</span>';
+        }
+        return '<span>' + d.ln + '</span>';
+      }).join('\n');
+
+      const codeLines = allLineData.map(d => {
+        if (d.type === 'match') {
+          return '<div class="px-4 bg-red-500/20 border-l-2 border-red-500 whitespace-pre">' + d.text + '</div>';
+        }
+        return '<div class="px-4 hover:bg-white/5 whitespace-pre text-slate-400">' + d.text + '</div>';
+      }).join('\n');
+
+      codeHtml = `
+        <div class="bg-[#111218] rounded-lg border border-slate-700 overflow-hidden font-mono text-xs leading-6">
+          <div class="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-slate-800 text-slate-400 text-[10px]">
+            <span>${esc(shortPath(f.location.file))}:${startLine}</span>
+            <a href="${vscodeLink}" class="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors no-underline" title="Open in VS Code">
+              <span class="material-symbols-outlined" style="font-size: 14px">open_in_new</span>
+              <span>Open in Editor</span>
+            </a>
+          </div>
+          <div class="flex min-w-full">
+            <div class="flex flex-col text-right pr-4 pl-2 text-slate-600 select-none bg-[#161b22] border-r border-slate-800 py-2 min-w-[50px]">
+              ${lineNums}
+            </div>
+            <div class="flex flex-col w-full py-2 text-slate-300 overflow-x-auto">
+              ${codeLines}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    const remediationHtml = f.remediation ? `
+      <div class="bg-blue-900/20 p-3 rounded-lg border border-blue-900/50 flex gap-3">
+        <span class="material-symbols-outlined text-blue-400 flex-shrink-0" style="font-size: 20px">lightbulb</span>
+        <div class="flex flex-col gap-1">
+          <p class="text-sm text-blue-100 font-medium">Remediation</p>
+          <p class="text-xs text-blue-300 leading-relaxed">${esc(f.remediation)}</p>
+          ${f.metadata?.owasp || f.metadata?.cwe ? `
+          <div class="mt-2 flex gap-2 flex-wrap">
+            ${f.metadata.owasp ? `<span class="text-[10px] uppercase font-bold text-blue-400 border border-blue-400/30 px-2 py-1 rounded">${esc(f.metadata.owasp)}</span>` : ''}
+            ${f.metadata.cwe ? `<span class="text-[10px] uppercase font-bold text-blue-400 border border-blue-400/30 px-2 py-1 rounded">${esc(f.metadata.cwe)}</span>` : ''}
+          </div>` : ''}
+        </div>
+      </div>` : '';
+
+    const isFirst = i === 0;
+    const sevLabel = f.severity.toUpperCase();
+    const isSuppressed = suppressedKeys.has(suppressionKey(f.ruleId, f.location.file));
+    const suppressBtnClass = isSuppressed
+      ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
+      : 'border-slate-600 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-500';
+
+    findingCards += `
+      <div class="finding-row bg-[#1e2330] rounded-lg border-l-4 ${sevBorderClass(f.severity)} shadow-md overflow-hidden ${isFirst ? 'expanded' : ''}${isSuppressed ? ' suppressed' : ''}"
+           data-sev="${f.severity}" data-rule="${esc(f.ruleId)}" data-file="${esc(f.location.file)}"
+           data-text="${esc((f.ruleName + ' ' + f.ruleId + ' ' + f.message + ' ' + f.location.file + ' ' + f.category).toLowerCase())}">
+        <!-- Summary (always visible) -->
+        <div class="p-4 flex items-center justify-between cursor-pointer hover:bg-[#252b3b] transition-colors" onclick="toggleFinding(this.parentNode)">
+          <div class="flex gap-3 items-center">
+            <span class="material-symbols-outlined ${sevTextClass(f.severity)}">${sevIcon(f.severity)}</span>
+            <div>
+              <div class="flex gap-2 items-center">
+                <span class="${sevTextClass(f.severity)} text-xs font-bold ${sevBgClass(f.severity).split(' ')[0]} px-1.5 rounded">${sevLabel}</span>
+                <span class="text-slate-500 text-xs font-mono">${esc(f.ruleId)}</span>
+              </div>
+              <p class="text-slate-200 text-sm font-medium mt-0.5">${esc(f.ruleName)}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="suppress-btn px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${suppressBtnClass}"
+              onclick="event.stopPropagation(); toggleSuppression('${esc(f.ruleId)}', '${esc(f.location.file)}')"
+              title="${isSuppressed ? 'Restore this finding' : 'Suppress this finding'}">${isSuppressed ? 'Undo Safe' : 'Mark Safe'}</button>
+            <span class="text-xs text-slate-500 font-mono hidden md:inline">${esc(shortPath(f.location.file))}:${f.location.startLine}</span>
+            <span class="material-symbols-outlined text-slate-600 expand-icon transition-transform">${isFirst ? 'expand_less' : 'expand_more'}</span>
+          </div>
+        </div>
+
+        <!-- Detail (expandable) -->
+        <div class="finding-detail border-t border-slate-700/50 p-4 flex flex-col gap-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-400">Location: <span class="text-white font-mono bg-slate-800 px-1.5 py-0.5 rounded text-xs">${esc(f.location.file)}:${f.location.startLine}</span></span>
+            <span class="text-slate-500 text-xs">${esc(f.category)}</span>
+          </div>
+
+          <p class="text-sm text-slate-300">${esc(f.message)}</p>
+
+          ${codeHtml}
+          ${remediationHtml}
+        </div>
+      </div>`;
+  });
+
+  return `
+    <div class="flex-1 overflow-y-auto p-6 md:p-10">
+      <div class="max-w-5xl mx-auto flex flex-col gap-6">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary">manage_search</span>
+              All Findings
+            </h2>
+            <p class="text-slate-400 text-sm">${total} findings across ${filesWithFindings.length} files</p>
+          </div>
+          <div class="flex gap-3 items-center">
+            <button onclick="showView('overview')" class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-sm transition-colors">
+              <span class="material-symbols-outlined text-sm align-middle mr-1">arrow_back</span>Overview
+            </button>
+          </div>
+        </div>
+
+        <!-- Search + Filters -->
+        <div class="flex gap-3 flex-wrap items-center">
+          <div class="relative flex-1 min-w-[200px]">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-lg">search</span>
+            <input type="text" id="findingSearch" placeholder="Search findings..."
+              class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border-dark bg-surface-dark text-white text-sm outline-none focus:border-primary transition-colors"
+              oninput="filterFindings()" />
+          </div>
+          <div class="flex gap-1.5">
+            <button class="filter-btn active px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="all" onclick="setFilter(this)">All</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="critical" onclick="setFilter(this)">Critical</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="high" onclick="setFilter(this)">High</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="medium" onclick="setFilter(this)">Medium</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="low" onclick="setFilter(this)">Low</button>
+          </div>
+        </div>
+
+        <!-- Finding Cards -->
+        <div id="findingsList" class="flex flex-col gap-3">
+          ${findingCards || `
+          <div class="bg-surface-dark border border-border-dark rounded-xl p-16 flex flex-col items-center justify-center gap-4">
+            <span class="material-symbols-outlined text-green-500" style="font-size: 48px">check_circle</span>
+            <h3 class="text-xl font-bold text-white">All Clear</h3>
+            <p class="text-slate-400 text-sm">No security findings detected.</p>
+          </div>`}
+        </div>
+
+        <div class="h-10"></div>
+      </div>
+    </div>`;
+}
+
+// ============================================================================
+// View Management
+// ============================================================================
+let currentView = 'overview';
+
+function showView(view) {
+  currentView = view;
+  const main = document.getElementById('main');
+
+  if (view === 'overview') {
+    main.innerHTML = renderOverview();
+  } else if (view === 'findings') {
+    main.innerHTML = renderFindings();
+  }
+
+  // Update sidebar nav active state
+  const navLinks = document.querySelectorAll('#sidebar a[onclick*="showView"]');
+  navLinks.forEach(link => {
+    const isActive = link.getAttribute('onclick').includes("'" + view + "'");
+    if (isActive) {
+      link.className = link.className.replace('text-slate-400 hover:text-white hover:bg-white/5', '').replace('bg-primary text-white shadow-md shadow-primary/10', '') + ' bg-primary text-white shadow-md shadow-primary/10';
+    } else {
+      link.className = link.className.replace('bg-primary text-white shadow-md shadow-primary/10', '') + ' text-slate-400 hover:text-white hover:bg-white/5';
+    }
+  });
+}
+
+// ============================================================================
+// Interactivity
+// ============================================================================
+function toggleFinding(row) {
+  row.classList.toggle('expanded');
+  const icon = row.querySelector('.expand-icon');
+  if (icon) icon.textContent = row.classList.contains('expanded') ? 'expand_less' : 'expand_more';
+}
+
+let activeFilter = 'all';
+function setFilter(btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.remove('active', 'border-white', 'text-white');
+  });
+  btn.classList.add('active', 'border-white', 'text-white');
+  activeFilter = btn.dataset.sev;
+  filterFindings();
+}
+
+function filterFindings() {
+  const query = (document.getElementById('findingSearch')?.value || '').toLowerCase();
+  document.querySelectorAll('.finding-row').forEach(row => {
+    const matchSev = activeFilter === 'all' || row.dataset.sev === activeFilter;
+    const matchText = !query || (row.dataset.text || '').includes(query);
+    row.style.display = (matchSev && matchText) ? '' : 'none';
+  });
+}
+
+function scrollToFile(file) {
+  showView('findings');
+  setTimeout(() => {
+    const rows = document.querySelectorAll('.finding-row');
+    for (const row of rows) {
+      if (row.dataset.file === file) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('expanded');
+        const icon = row.querySelector('.expand-icon');
+        if (icon) icon.textContent = 'expand_less';
+        row.style.outline = '2px solid ' + sevColor(row.dataset.sev);
+        setTimeout(() => { row.style.outline = ''; }, 2000);
+        break;
+      }
+    }
+  }, 50);
+}
+
+function expandRule(ruleId) {
+  const rows = document.querySelectorAll('.finding-row');
+  for (const row of rows) {
+    if (row.dataset.rule === ruleId) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (!row.classList.contains('expanded')) {
+        row.classList.add('expanded');
+        const icon = row.querySelector('.expand-icon');
+        if (icon) icon.textContent = 'expand_less';
+      }
+      row.style.outline = '2px solid ' + sevColor(row.dataset.sev);
+      setTimeout(() => { row.style.outline = ''; }, 2000);
+      break;
+    }
+  }
+}
+
+function exportJson() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'clawsec-report.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// Initial Render
+// ============================================================================
+document.getElementById('sidebar').innerHTML = renderSidebar();
+showView('overview');
+updateSuppressionsBar();
+</script>
+</body>
+</html>

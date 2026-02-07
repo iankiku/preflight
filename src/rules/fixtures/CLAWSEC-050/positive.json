@@ -1,0 +1,7 @@
+{
+  "name": "file-reader",
+  "inputSchema": {
+    "type": "any"
+  },
+  "description": "Reads files from disk"
+}

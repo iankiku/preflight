@@ -1,0 +1,110 @@
+version: "1.0"
+rules:
+  - id: CLAWSEC-500
+    name: "Potential RCE: exec(sys.argv)"
+    severity: critical
+    category: code-execution
+    location:
+      include: [scripts]
+    perFileLimit: true
+    patterns:
+      - type: ast
+        lang: python
+        query: |
+          (call
+            function: (identifier) @func
+            arguments: (argument_list
+              (subscript
+                value: (attribute
+                  object: (identifier) @obj
+                  attribute: (identifier) @attr
+                )
+              )
+            )
+            (#eq? @func "exec")
+            (#eq? @obj "sys")
+            (#eq? @attr "argv")
+          )
+    message: "Critical RCE Vulnerability: Executing code directly from sys.argv"
+    remediation: "Do not pass command-line arguments directly to exec(). Use strict validation or safe alternatives."
+
+  - id: CLAWSEC-501
+    name: "subprocess-shell-true"
+    severity: high
+    category: code-execution
+    location:
+      include: [scripts]
+    perFileLimit: true
+    patterns:
+      - type: ast
+        lang: python
+        query: |
+          (call
+            function: (attribute
+              object: (identifier) @mod
+              attribute: (identifier) @fn
+            )
+            arguments: (argument_list
+              (keyword_argument
+                name: (identifier) @kwarg
+                value: (true) @val
+              )
+            )
+            (#match? @mod "^subprocess$")
+            (#match? @fn "^(call|run|Popen)$")
+            (#eq? @kwarg "shell")
+          )
+    message: "subprocess called with shell=True — command injection risk"
+    remediation: "Use shell=False (default) and pass arguments as a list instead of a string."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-78"
+
+  - id: CLAWSEC-510
+    name: "bash-eval-variable"
+    severity: high
+    category: code-execution
+    location:
+      include: [scripts]
+    perFileLimit: true
+    patterns:
+      - type: ast
+        lang: bash
+        query: |
+          (command
+            name: (command_name
+              (word) @cmd
+            )
+            argument: (simple_expansion) @arg
+            (#eq? @cmd "eval")
+          )
+    message: "eval with variable expansion in Bash — command injection risk"
+    remediation: "Avoid eval with variables. Use safer alternatives or validate input strictly."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-78"
+
+  - id: CLAWSEC-520
+    name: "js-eval-dynamic"
+    severity: critical
+    category: code-execution
+    location:
+      include: [scripts]
+    perFileLimit: true
+    patterns:
+      - type: ast
+        lang: javascript
+        query: |
+          (call_expression
+            function: (identifier) @func
+            arguments: (arguments
+              (_) @arg
+            )
+            (#eq? @func "eval")
+            (#not-match? @arg "^\".*\"$")
+          )
+    message: "eval() called with dynamic argument — arbitrary code execution risk"
+    remediation: "Remove eval(). Use JSON.parse() for data or safe alternatives for dynamic behavior."
+    metadata:
+      owasp: "LLM03:2025"
+      cwe: "CWE-94"
