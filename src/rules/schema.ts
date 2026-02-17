@@ -31,6 +31,8 @@ export const RegexPatternSchema = z.object({
   type: z.literal('regex').optional().default('regex'),
   regex: z.string().min(1),
   flags: z.string().optional(),
+  /** Regex patterns that suppress a match when found on the same line */
+  excludePatterns: z.array(z.string()).optional(),
 });
 
 export const FrontmatterPatternSchema = z.object({
