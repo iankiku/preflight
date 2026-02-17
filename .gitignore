@@ -3,4 +3,4 @@ dist/
 *.tgz
 *.log
 .DS_Store
-.clawsec/
+.preflight/

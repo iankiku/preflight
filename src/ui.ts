@@ -1,5 +1,5 @@
 /**
- * ClawSec UI Utilities
+ * Preflight UI Utilities
  * TTY detection, terminal hyperlinks, and interactive mode gating.
  */
 

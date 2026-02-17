@@ -1,5 +1,5 @@
 /**
- * ClawSec Analyze Pipeline Router
+ * Preflight Analyze Pipeline Router
  * Dispatches files to the appropriate analyzers based on rule pattern types
  */
 

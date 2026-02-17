@@ -44,7 +44,7 @@ async function getParser(lang: string): Promise<Parser | null> {
     return parser;
   } catch (e) {
     console.error(
-      `[clawsec] Could not load grammar for ${lang}: ${e instanceof Error ? e.message : e}`,
+      `[preflight] Could not load grammar for ${lang}: ${e instanceof Error ? e.message : e}`,
     );
     return null;
   }
@@ -137,7 +137,7 @@ export async function runAstRules(
           }
         } catch (e) {
           console.error(
-            `[clawsec] Query error for rule ${rule.id} on ${file.relativePath}: ${e instanceof Error ? e.message : e}`,
+            `[preflight] Query error for rule ${rule.id} on ${file.relativePath}: ${e instanceof Error ? e.message : e}`,
           );
         } finally {
           if (query?.delete) query.delete();

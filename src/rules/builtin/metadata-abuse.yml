@@ -1,6 +1,6 @@
 version: "1.0"
 rules:
-  - id: CLAWSEC-012
+  - id: PREFLIGHT-012
     name: always-enabled
     severity: high
     category: metadata-abuse
@@ -14,7 +14,7 @@ rules:
       owasp: "LLM05:2025"
       cwe: "CWE-269"
 
-  - id: CLAWSEC-013
+  - id: PREFLIGHT-013
     name: skillkey-aliasing
     severity: medium
     category: metadata-abuse

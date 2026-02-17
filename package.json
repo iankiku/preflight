@@ -1,10 +1,10 @@
 {
-  "name": "clawsec",
+  "name": "preflight",
   "version": "1.0.0",
   "description": "Security scanner for AI — prompts, skills, vibecoded projects",
   "type": "module",
   "bin": {
-    "clawsec": "dist/cli.js"
+    "preflight": "dist/cli.js"
   },
   "main": "dist/cli.js",
   "files": [
@@ -12,6 +12,7 @@
     "src/grammars/",
     "src/rules/builtin/",
     "src/rules/fixtures/",
+    "src/assets/",
     "src/dashboard.html"
   ],
   "scripts": {
@@ -21,7 +22,8 @@
     "dev": "node --import tsx src/cli.ts",
     "scan": "node dist/cli.js scan",
     "rules": "node dist/cli.js rules",
-    "test-rules": "node dist/cli.js test-rules"
+    "test-rules": "node dist/cli.js test-rules",
+    "test": "node --test --import tsx"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",
@@ -59,7 +61,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/agentsauthority/clawsec"
+    "url": "https://github.com/iankiku/preflight"
   },
-  "author": "Agents Authority"
+  "author": "Ian Kiku"
 }

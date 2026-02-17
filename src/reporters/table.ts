@@ -4,7 +4,7 @@
  */
 
 import type { ScanResult, Finding, Severity } from '../types.js';
-import { c, severityColor } from '../utils.js';
+import { c, severityColor, sanitizeForTerminal } from '../utils.js';
 
 const FILLED = '\u2588'; // █
 const EMPTY = '\u2591';  // ░
@@ -54,7 +54,7 @@ export function formatTable(result: ScanResult): string {
 
   // Score headline
   const colorFn = scoreColor(score);
-  lines.push(c.bold(`  ClawSec Security Score: ${colorFn(`${score}/100`)}`));
+  lines.push(c.bold(`  Preflight Security Score: ${colorFn(`${score}/100`)}`));
   lines.push(`  ${scoreBar(score)}`);
   lines.push('');
 
@@ -79,17 +79,22 @@ export function formatTable(result: ScanResult): string {
 
   lines.push(c.bold('  Top risks:'));
   for (const f of top) {
-    const id = c.dim(f.ruleId.padEnd(13));
-    const name = c.bold(truncate(f.ruleName, 30).padEnd(30));
-    const loc = c.blue(`${f.location.file}:${f.location.startLine}`);
-    const editorLink = c.cyan(`vscode://file/${f.location.file}:${f.location.startLine}`);
+    const safeRuleId = sanitizeForTerminal(f.ruleId);
+    const safeRuleName = sanitizeForTerminal(f.ruleName);
+    const safeFile = sanitizeForTerminal(f.location.file);
+    const id = c.dim(safeRuleId.padEnd(13));
+    const name = c.bold(truncate(safeRuleName, 30).padEnd(30));
+    const loc = c.blue(`${safeFile}:${f.location.startLine}`);
+    const editorLink = c.cyan(`vscode://file/${safeFile}:${f.location.startLine}`);
     lines.push(`  ${id} ${name}  ${loc}`);
 
     // Context preview with surrounding lines
     const pad = ' '.repeat(14);
-    const ctxBefore = f.location.contextBefore || [];
-    const ctxAfter = f.location.contextAfter || [];
-    const snippetLines = f.location.snippet ? f.location.snippet.split('\n') : [];
+    const ctxBefore = (f.location.contextBefore || []).map(sanitizeForTerminal);
+    const ctxAfter = (f.location.contextAfter || []).map(sanitizeForTerminal);
+    const snippetLines = f.location.snippet
+      ? f.location.snippet.split('\n').map(sanitizeForTerminal)
+      : [];
     const matchStart = f.location.startLine;
 
     if (ctxBefore.length > 0 || snippetLines.length > 0) {
@@ -128,7 +133,7 @@ export function formatTable(result: ScanResult): string {
   if (result.suppressedCount && result.suppressedCount > 0) {
     lines.push(c.dim(`  ${result.suppressedCount} findings suppressed (marked safe)`));
   }
-  lines.push(`  Dashboard ${c.cyan('\u2192')} ${c.cyan('.clawsec-report.html')}`);
+  lines.push(`  Dashboard ${c.cyan('\u2192')} ${c.cyan('.preflight-report.html')}`);
   lines.push('');
 
   return lines.join('\n');

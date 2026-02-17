@@ -1,0 +1,25 @@
+name: Package Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - id: pack
+        run: echo "file=$(npm pack)" >> $GITHUB_OUTPUT
+      - name: Upload package to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.file }}

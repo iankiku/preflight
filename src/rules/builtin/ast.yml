@@ -1,6 +1,6 @@
 version: "1.0"
 rules:
-  - id: CLAWSEC-500
+  - id: PREFLIGHT-500
     name: "Potential RCE: exec(sys.argv)"
     severity: critical
     category: code-execution
@@ -28,7 +28,7 @@ rules:
     message: "Critical RCE Vulnerability: Executing code directly from sys.argv"
     remediation: "Do not pass command-line arguments directly to exec(). Use strict validation or safe alternatives."
 
-  - id: CLAWSEC-501
+  - id: PREFLIGHT-501
     name: "subprocess-shell-true"
     severity: high
     category: code-execution
@@ -60,7 +60,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-78"
 
-  - id: CLAWSEC-510
+  - id: PREFLIGHT-510
     name: "bash-eval-variable"
     severity: high
     category: code-execution
@@ -84,7 +84,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-78"
 
-  - id: CLAWSEC-520
+  - id: PREFLIGHT-520
     name: "js-eval-dynamic"
     severity: critical
     category: code-execution

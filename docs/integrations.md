@@ -1,12 +1,13 @@
 # CI/CD Integrations
 
-ClawSec is designed for CI pipelines. Key features:
+Preflight is designed for CI pipelines. Key features:
 
 - `--format sarif` for GitHub Code Scanning
 - `--fail-on <severity>` for gate checks
 - `--score-threshold <n>` for quality gates
 - `--quiet` for exit-code-only mode
 - Non-zero exit codes on policy violations
+- By default, only `skills.md` / `SKILLS.MD` are scanned (use `--all-files` to override)
 
 ## GitHub Actions
 
@@ -17,7 +18,7 @@ name: Security Scan
 on: [push, pull_request]
 
 jobs:
-  clawsec:
+  preflight:
     runs-on: ubuntu-latest
     permissions:
       security-events: write    # Required for SARIF upload
@@ -27,8 +28,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run ClawSec
-        run: npx clawsec scan . --format sarif -o results.sarif --fail-on critical
+      - name: Run Preflight
+        run: npx preflight scan . --format sarif -o results.sarif --fail-on critical
 
       - name: Upload SARIF to GitHub
         if: always()
@@ -42,8 +43,8 @@ This uploads findings directly to GitHub's **Security > Code scanning alerts** t
 ### Score-based quality gate
 
 ```yaml
-      - name: Run ClawSec
-        run: npx clawsec scan . --score-threshold 70 --format table
+      - name: Run Preflight
+        run: npx preflight scan . --score-threshold 70 --format table
 ```
 
 Fails the build if the security score drops below 70.
@@ -51,11 +52,11 @@ Fails the build if the security score drops below 70.
 ### PR comment with JSON
 
 ```yaml
-      - name: Run ClawSec
+      - name: Run Preflight
         id: scan
         run: |
-          npx clawsec scan . --format json -o clawsec-results.json
-          SCORE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('clawsec-results.json','utf8')).score)")
+          npx preflight scan . --format json -o preflight-results.json
+          SCORE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('preflight-results.json','utf8')).score)")
           echo "score=$SCORE" >> $GITHUB_OUTPUT
 
       - name: Comment PR
@@ -67,18 +68,18 @@ Fails the build if the security score drops below 70.
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `## ClawSec Security Score: ${{ steps.scan.outputs.score }}/100`
+              body: `## Preflight Security Score: ${{ steps.scan.outputs.score }}/100`
             })
 ```
 
 ## GitLab CI
 
 ```yaml
-clawsec:
+preflight:
   image: node:20
   stage: test
   script:
-    - npx clawsec scan . --format sarif -o gl-sast-report.sarif --fail-on high
+    - npx preflight scan . --format sarif -o gl-sast-report.sarif --fail-on high
   artifacts:
     reports:
       sast: gl-sast-report.sarif
@@ -95,13 +96,13 @@ GitLab reads SARIF files as SAST reports, displaying findings in merge request s
   inputs:
     versionSpec: '20.x'
 
-- script: npx clawsec scan . --format sarif -o $(Build.ArtifactStagingDirectory)/clawsec.sarif --fail-on high
-  displayName: 'Run ClawSec'
+- script: npx preflight scan . --format sarif -o $(Build.ArtifactStagingDirectory)/preflight.sarif --fail-on high
+  displayName: 'Run Preflight'
   continueOnError: true
 
 - task: PublishBuildArtifacts@1
   inputs:
-    PathtoPublish: $(Build.ArtifactStagingDirectory)/clawsec.sarif
+    PathtoPublish: $(Build.ArtifactStagingDirectory)/preflight.sarif
     ArtifactName: CodeAnalysis
 ```
 
@@ -114,7 +115,7 @@ pipelines:
         name: Security Scan
         image: node:20
         script:
-          - npx clawsec scan . --fail-on high --format table
+          - npx preflight scan . --fail-on high --format table
 ```
 
 ## Pre-commit Hook
@@ -123,7 +124,7 @@ Add to `.git/hooks/pre-commit` or use [pre-commit](https://pre-commit.com/):
 
 ```bash
 #!/bin/sh
-npx clawsec scan . --fail-on critical --quiet
+npx preflight scan . --fail-on critical --quiet
 ```
 
 This blocks commits that introduce critical findings.
@@ -153,17 +154,17 @@ This blocks commits that introduce critical findings.
 
 ## SARIF Output
 
-ClawSec generates [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) (Static Analysis Results Interchange Format) — the industry standard for static analysis tools.
+Preflight generates [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) (Static Analysis Results Interchange Format) — the industry standard for static analysis tools.
 
 The SARIF output includes:
-- **Tool metadata:** ClawSec version and information URI
+- **Tool metadata:** Preflight version and information URI
 - **Rule definitions:** Each triggered rule as a `reportingDescriptor` with ID, name, description, CWE helpUri, and category tags
 - **Results:** Each finding with rule reference, severity level, message, file location (path, line, column), and code snippet
-- **Custom properties:** `clawsec-score` on the run object
+- **Custom properties:** `preflight-score` on the run object
 
 Severity mapping:
 
-| ClawSec Severity | SARIF Level |
+| Preflight Severity | SARIF Level |
 |-----------------|-------------|
 | Critical | `error` |
 | High | `error` |

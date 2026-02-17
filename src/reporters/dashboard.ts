@@ -17,5 +17,5 @@ export function formatDashboard(result: ScanResult): string {
   // Escape </script> in JSON to prevent breaking the HTML template
   const jsonData = JSON.stringify(result).replace(/<\//g, '<\\/');
   // Use function replacement to prevent $ in JSON being interpreted as replacement patterns
-  return template.replace('__CLAWSEC_DATA__', () => jsonData);
+  return template.replace('__PREFLIGHT_DATA__', () => jsonData);
 }

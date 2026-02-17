@@ -1,6 +1,6 @@
 version: "1.0"
 rules:
-  - id: CLAWSEC-001
+  - id: PREFLIGHT-001
     name: instruction-override
     severity: high
     category: prompt-injection
@@ -14,7 +14,7 @@ rules:
       owasp: "LLM01:2025"
       cwe: "CWE-77"
 
-  - id: CLAWSEC-002
+  - id: PREFLIGHT-002
     name: system-prompt-leak
     severity: high
     category: prompt-injection
@@ -28,7 +28,7 @@ rules:
       owasp: "LLM01:2025"
       cwe: "CWE-200"
 
-  - id: CLAWSEC-003
+  - id: PREFLIGHT-003
     name: role-hijacking
     severity: high
     category: prompt-injection
@@ -42,7 +42,7 @@ rules:
       owasp: "LLM01:2025"
       cwe: "CWE-284"
 
-  - id: CLAWSEC-004
+  - id: PREFLIGHT-004
     name: jailbreak-patterns
     severity: critical
     category: prompt-injection
@@ -62,7 +62,7 @@ rules:
       owasp: "LLM01:2025"
       cwe: "CWE-863"
 
-  - id: CLAWSEC-005
+  - id: PREFLIGHT-005
     name: delimiter-escape
     severity: medium
     category: prompt-injection

@@ -1,6 +1,6 @@
 version: "1.0"
 rules:
-  - id: CLAWSEC-050
+  - id: PREFLIGHT-050
     name: unvalidated-mcp-inputs
     severity: high
     category: misconfiguration
@@ -15,7 +15,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-20"
 
-  - id: CLAWSEC-051
+  - id: PREFLIGHT-051
     name: overprivileged-mcp-server
     severity: medium
     category: misconfiguration
@@ -29,7 +29,7 @@ rules:
       owasp: "LLM05:2025"
       cwe: "CWE-269"
 
-  - id: CLAWSEC-052
+  - id: PREFLIGHT-052
     name: enable-all-mcp-servers
     severity: high
     category: misconfiguration

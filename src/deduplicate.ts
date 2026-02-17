@@ -1,5 +1,5 @@
 /**
- * ClawSec Finding Deduplication
+ * Preflight Finding Deduplication
  * Removes duplicate findings and sorts by severity, file, line
  */
 

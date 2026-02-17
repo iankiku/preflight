@@ -1,6 +1,6 @@
 version: "1.0"
 rules:
-  - id: CLAWSEC-009
+  - id: PREFLIGHT-009
     name: dangerous-eval
     severity: critical
     category: code-execution
@@ -19,7 +19,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-94"
 
-  - id: CLAWSEC-010
+  - id: PREFLIGHT-010
     name: command-substitution
     severity: high
     category: code-execution
@@ -43,7 +43,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-78"
 
-  - id: CLAWSEC-011
+  - id: PREFLIGHT-011
     name: subprocess-shell
     severity: high
     category: code-execution
@@ -64,7 +64,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-78"
 
-  - id: CLAWSEC-030
+  - id: PREFLIGHT-030
     name: python-pickle-loads
     severity: high
     category: code-execution
@@ -79,7 +79,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-502"
 
-  - id: CLAWSEC-031
+  - id: PREFLIGHT-031
     name: unsafe-yaml-load
     severity: high
     category: code-execution
@@ -95,7 +95,7 @@ rules:
       owasp: "LLM03:2025"
       cwe: "CWE-502"
 
-  - id: CLAWSEC-032
+  - id: PREFLIGHT-032
     name: sql-injection
     severity: critical
     category: code-execution

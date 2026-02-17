@@ -1,5 +1,5 @@
 /**
- * ClawSec Core Types
+ * Preflight Core Types
  * Type definitions for the v1.0 pipeline scanner
  */
 
@@ -154,6 +154,7 @@ export interface ScanResult {
   timestamp: string;
   duration: number;
   scanRoot: string;
+  projectName?: string;
   filesScanned: number;
   rulesApplied: number;
   score: number;
@@ -193,5 +194,6 @@ export interface ScanOptions {
   enableRules?: string[];
   disableRules?: string[];
   ruleFiles?: string[];
+  onlySkills?: boolean;
   quiet?: boolean;
 }

@@ -1,6 +1,6 @@
 # Architecture
 
-ClawSec is a 4-stage pipeline scanner built as a single Node.js CLI tool.
+Preflight is a 4-stage pipeline scanner built as a single Node.js CLI tool.
 
 ```
 discover → analyze → deduplicate → report
@@ -59,14 +59,15 @@ Walks a directory tree and produces `FileEntry[]` objects.
 **Process:**
 1. If path is a single file, build one `FileEntry` and return
 2. If directory, use `glob('**/*')` with ignore patterns
-3. Read `.gitignore` from scan root and merge with defaults
-4. Skip binary files, files > 1MB, and excluded extensions
-5. For each file:
+3. Only include files named `skills.md` / `SKILLS.MD` (unless `--all-files` is used)
+4. Read `.gitignore` from scan root and merge with defaults
+5. Skip binary files, files > 1MB, and excluded extensions
+6. For each file:
    - Read content as UTF-8
    - Detect YAML frontmatter (`---` delimited)
    - Parse frontmatter with the `yaml` package
    - Classify language by extension (`.py` → `python`, `.sh` → `bash`, `.js/.ts` → `javascript`)
-6. Return array of `FileEntry` objects
+7. Return array of `FileEntry` objects
 
 **FileEntry shape:**
 ```typescript
@@ -164,7 +165,9 @@ Four output formatters, all pure functions:
 | `sarif.ts` | `formatSarif(result, rules)` | SARIF 2.1.0 JSON |
 | `dashboard.ts` | `formatDashboard(result)` | Self-contained HTML |
 
-The dashboard reporter reads `src/dashboard.html` (a template with inline CSS/JS) and replaces the `__CLAWSEC_DATA__` placeholder with the scan result JSON.
+The dashboard reporter reads `src/dashboard.html` and replaces the `__PREFLIGHT_DATA__` placeholder with the scan result JSON.
+
+**Dashboard server:** `preflight dashboard` serves the report locally and binds to `127.0.0.1` only. Static assets are copied to `.preflight/scans/assets/`.
 
 ## Rule System
 
@@ -184,13 +187,13 @@ Rules can be filtered with `--enable` (whitelist) or `--disable` (blacklist).
 
 ```
 src/rules/builtin/
-  prompt-injection.yml     # CLAWSEC-001 to 005
-  data-exfiltration.yml    # CLAWSEC-006 to 008
-  code-execution.yml       # CLAWSEC-009 to 011, 030 to 032
-  metadata-abuse.yml       # CLAWSEC-012 to 013
-  secrets.yml              # CLAWSEC-014 to 015
-  mcp-security.yml         # CLAWSEC-050 to 052
-  ast.yml                  # CLAWSEC-500, 501, 510, 520
+  prompt-injection.yml     # PREFLIGHT-001 to 005
+  data-exfiltration.yml    # PREFLIGHT-006 to 008
+  code-execution.yml       # PREFLIGHT-009 to 011, 030 to 032
+  metadata-abuse.yml       # PREFLIGHT-012 to 013
+  secrets.yml              # PREFLIGHT-014 to 015
+  mcp-security.yml         # PREFLIGHT-050 to 052
+  ast.yml                  # PREFLIGHT-500, 501, 510, 520
 ```
 
 ## Build System
@@ -202,7 +205,7 @@ src/rules/builtin/
 ## Directory Structure
 
 ```
-clawsec/
+preflight/
   dist/cli.js                  # Built CLI entry point (38KB)
   src/
     cli.ts                     # CLI orchestrator

@@ -73,14 +73,14 @@ export function formatSarif(result: ScanResult, rules: Rule[]): string {
       {
         tool: {
           driver: {
-            name: 'ClawSec',
+            name: 'Preflight',
             version: '1.0.0',
-            informationUri: 'https://github.com/agentsauthority/clawsec',
+            informationUri: 'https://github.com/iankiku/preflight',
             rules: reportingDescriptors,
           },
         },
         results,
-        properties: { 'clawsec-score': result.score },
+        properties: { 'preflight-score': result.score },
       },
     ],
   };

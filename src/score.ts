@@ -1,5 +1,5 @@
 /**
- * ClawSec Security Score Calculator
+ * Preflight Security Score Calculator
  * Starts at 100, deducts per finding by severity
  */
 

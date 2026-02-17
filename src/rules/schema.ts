@@ -1,6 +1,6 @@
 /**
  * Rule Schema
- * Zod validation schemas for ClawSec security rules
+ * Zod validation schemas for Preflight security rules
  */
 
 import { z } from 'zod';
@@ -80,7 +80,7 @@ export const RuleMetadataSchema = z.object({
 // ============================================================================
 
 export const RuleSchema = z.object({
-  id: z.string().regex(/^CLAWSEC-\d{3,4}$/, 'Rule ID must be CLAWSEC-XXX or CLAWSEC-XXXX format'),
+  id: z.string().regex(/^PREFLIGHT-\d{3,4}$/, 'Rule ID must be PREFLIGHT-XXX or PREFLIGHT-XXXX format'),
   name: z.string().min(1),
   severity: SeveritySchema,
   category: CategorySchema,

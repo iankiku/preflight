@@ -1,5 +1,5 @@
 /**
- * ClawSec Utilities
+ * Preflight Utilities
  * ANSI colors, file classification, hashing
  */
 
@@ -36,6 +36,21 @@ export const severityColor: Record<string, (t: string) => string> = {
   low: (t: string) => c.blue(t),
   info: (t: string) => c.dim(t),
 };
+
+// ============================================================================
+// Output Sanitization
+// ============================================================================
+
+const ANSI_CSI_REGEX = /\u001B\[[0-?]*[ -/]*[@-~]/g; // Control Sequence Introducer
+const ANSI_OSC_REGEX = /\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g; // Operating System Command
+const CONTROL_REGEX = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+export function sanitizeForTerminal(text: string): string {
+  return text
+    .replace(ANSI_OSC_REGEX, '')
+    .replace(ANSI_CSI_REGEX, '')
+    .replace(CONTROL_REGEX, '');
+}
 
 // ============================================================================
 // File Classification

@@ -1,6 +1,6 @@
 # Writing Custom Rules
 
-ClawSec rules are YAML files with one or more detection patterns. You can extend ClawSec with your own rules to enforce team-specific security policies.
+Preflight rules are YAML files with one or more detection patterns. You can extend Preflight with your own rules to enforce team-specific security policies.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ rules:
 Run it:
 
 ```bash
-clawsec scan . --rules ./my-rules.yml
+preflight scan . --rules ./my-rules.yml
 ```
 
 ## Rule Structure
@@ -31,7 +31,7 @@ clawsec scan . --rules ./my-rules.yml
 ```yaml
 version: "1.0"
 rules:
-  - id: CLAWSEC-XXX          # Required. Format: CLAWSEC-NNN or CLAWSEC-NNNN
+  - id: PREFLIGHT-XXX          # Required. Format: PREFLIGHT-NNN or PREFLIGHT-NNNN
     name: my-rule-name        # Required. Short identifier
     severity: high            # Required. critical | high | medium | low | info
     category: code-execution  # Required. See categories below
@@ -69,18 +69,18 @@ rules:
 
 ### Rule IDs
 
-IDs must match the format `CLAWSEC-NNN` or `CLAWSEC-NNNN`. For custom rules, use the `CUSTOM-` prefix to avoid collisions with built-in rules:
+IDs must match the format `PREFLIGHT-NNN` or `PREFLIGHT-NNNN`. For custom rules, use the `CUSTOM-` prefix to avoid collisions with built-in rules:
 
 ```yaml
-id: CUSTOM-001   # Won't pass schema validation (must be CLAWSEC-XXX)
-id: CLAWSEC-900  # OK — use the 900+ range for custom rules
+id: CUSTOM-001   # Won't pass schema validation (must be PREFLIGHT-XXX)
+id: PREFLIGHT-900  # OK — use the 900+ range for custom rules
 ```
 
 ---
 
 ## Pattern Types
 
-ClawSec supports three pattern engines. Each rule can contain multiple patterns — a finding is created for each individual match.
+Preflight supports three pattern engines. Each rule can contain multiple patterns — a finding is created for each individual match.
 
 ### 1. Regex Patterns
 
@@ -239,7 +239,7 @@ location:
 
 ```yaml
 # Only match eval() inside code blocks, not in prose
-- id: CLAWSEC-009
+- id: PREFLIGHT-009
   name: dangerous-eval
   patterns:
     - regex: "\\beval\\s*\\("
@@ -281,13 +281,13 @@ my-rules/
 Load all of them:
 
 ```bash
-clawsec scan . --rules ./my-rules/auth-rules.yml,./my-rules/api-rules.yml
+preflight scan . --rules ./my-rules/auth-rules.yml,./my-rules/api-rules.yml
 ```
 
 Or load built-in + custom rules together:
 
 ```bash
-clawsec scan . --rules ./my-rules/auth-rules.yml
+preflight scan . --rules ./my-rules/auth-rules.yml
 # Built-in rules are always included unless you use --enable to filter
 ```
 
@@ -301,7 +301,7 @@ Create test fixtures alongside your rules:
 my-rules/
   auth-rules.yml
   fixtures/
-    CLAWSEC-900/
+    PREFLIGHT-900/
       positive.py      # Should trigger rule
       negative.py      # Should NOT trigger rule
 ```
@@ -309,7 +309,7 @@ my-rules/
 Then validate with `test-rules`:
 
 ```bash
-clawsec test-rules
+preflight test-rules
 ```
 
 The test runner checks:
@@ -322,17 +322,17 @@ The test runner checks:
 
 ```bash
 # Disable specific rules
-clawsec scan . --disable CLAWSEC-005,CLAWSEC-008
+preflight scan . --disable PREFLIGHT-005,PREFLIGHT-008
 
 # Enable only specific rules
-clawsec scan . --enable CLAWSEC-014,CLAWSEC-015
+preflight scan . --enable PREFLIGHT-014,PREFLIGHT-015
 ```
 
 Or set `enabled: false` in the rule YAML:
 
 ```yaml
 rules:
-  - id: CLAWSEC-005
+  - id: PREFLIGHT-005
     enabled: false
     # ... rest of rule
 ```

@@ -1,28 +1,26 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>ClawSec Security Report</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<title>Preflight Security Report</title>
+<script src="./assets/tailwindcss.js"></script>
 <script>
 tailwind.config = {
-  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        "primary": "#1337ec",
-        "background-dark": "#101322",
-        "surface-dark": "#161927",
-        "surface-darker": "#0d0f1a",
-        "border-dark": "#282b39",
+        primary: "#2563eb",
+        background: "#f8fafc",
+        surface: "#ffffff",
+        border: "#e2e8f0",
+        text: "#0f172a",
+        muted: "#64748b",
       },
       fontFamily: {
-        "display": ["Space Grotesk", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
-        "body": ["Noto Sans", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
-        "mono": ["JetBrains Mono", "SF Mono", "Monaco", "Consolas", "monospace"],
+        display: ["IBM Plex Sans", "SF Pro Text", "Segoe UI", "sans-serif"],
+        body: ["IBM Plex Sans", "SF Pro Text", "Segoe UI", "sans-serif"],
+        mono: ["SF Mono", "Monaco", "Consolas", "monospace"],
       },
       borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
     },
@@ -30,32 +28,68 @@ tailwind.config = {
 }
 </script>
 <style>
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 400;
+  src: url('./assets/material-symbols.ttf') format('truetype');
+}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+}
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #101322; }
-::-webkit-scrollbar-thumb { background: #282b39; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #3b3f54; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .finding-detail { display: none; }
 .finding-row.expanded .finding-detail { display: block; }
 .finding-row.expanded .expand-icon { transform: rotate(180deg); }
 .view-hidden { display: none !important; }
-.finding-row.suppressed { opacity: 0.4; border-left-color: #475569 !important; }
-.finding-row.suppressed:hover { opacity: 0.7; }
+.finding-row.suppressed { opacity: 0.6; border-left-color: #94a3b8 !important; }
+.finding-row.suppressed:hover { opacity: 0.8; }
 </style>
 </head>
-<body class="bg-background-dark text-white font-display overflow-hidden h-screen flex">
-<script id="clawsec-data" type="application/json">__CLAWSEC_DATA__</script>
+<body class="bg-slate-50 text-slate-900 font-display overflow-hidden h-screen flex">
+<script id="preflight-data" type="application/json">__PREFLIGHT_DATA__</script>
 
 <!-- Sidebar -->
-<aside id="sidebar" class="w-[260px] h-full bg-[#111218] flex flex-col border-r border-border-dark shrink-0"></aside>
+<aside id="sidebar" class="w-[260px] h-full bg-white flex flex-col border-r border-slate-200 shrink-0"></aside>
 
 <!-- Main Content -->
 <main id="main" class="flex-1 flex flex-col h-full overflow-hidden relative"></main>
+
+<!-- Rescan Overlay -->
+<div id="rescanOverlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-[80]">
+  <div class="w-[360px] max-w-[90vw] bg-white border border-slate-200 rounded-xl p-6 shadow-2xl">
+    <div class="flex items-center gap-3">
+      <span class="material-symbols-outlined text-primary">play_circle</span>
+      <div class="flex flex-col">
+        <h3 class="text-slate-900 font-semibold">Running Scan</h3>
+        <p id="rescanStatus" class="text-xs text-slate-600 mt-1">Starting…</p>
+      </div>
+    </div>
+    <div class="mt-4 h-2 w-full bg-slate-50 rounded-full overflow-hidden">
+      <div id="rescanBar" class="h-full bg-primary transition-all duration-300" style="width: 0%"></div>
+    </div>
+    <p id="rescanHint" class="text-xs text-slate-500 mt-3">This may take a moment.</p>
+  </div>
+</div>
 
 <script>
 // ============================================================================
 // Data
 // ============================================================================
-const data = JSON.parse(document.getElementById('clawsec-data').textContent);
+const data = JSON.parse(document.getElementById('preflight-data').textContent);
 
 // ============================================================================
 // Suppressions State
@@ -129,12 +163,117 @@ function sevDotClass(s) {
 }
 
 function fileIcon(ext) {
-  if (ext === '.md') return { icon: 'markdown', color: 'text-slate-400' };
+  if (ext === '.md') return { icon: 'markdown', color: 'text-slate-600' };
   if (ext === '.py') return { icon: 'code', color: 'text-yellow-500' };
   if (ext === '.js' || ext === '.ts') return { icon: 'javascript', color: 'text-yellow-400' };
   if (ext === '.json' || ext === '.yaml' || ext === '.yml') return { icon: 'data_object', color: 'text-green-500' };
   if (ext === '.sh') return { icon: 'terminal', color: 'text-green-400' };
-  return { icon: 'description', color: 'text-slate-400' };
+  return { icon: 'description', color: 'text-slate-600' };
+}
+
+function scanCommand() {
+  const root = data.scanRoot || '.';
+  const sanitized = String(root);
+  const needsQuotes = /\s/.test(sanitized);
+  const target = needsQuotes ? `"${sanitized.replace(/"/g, '\\"')}"` : sanitized;
+  return `preflight scan ${target}`;
+}
+
+function showRescanOverlay() {
+  const overlay = document.getElementById('rescanOverlay');
+  overlay.classList.remove('hidden');
+  overlay.classList.add('flex');
+}
+
+function hideRescanOverlay() {
+  const overlay = document.getElementById('rescanOverlay');
+  overlay.classList.add('hidden');
+  overlay.classList.remove('flex');
+}
+
+function setRescanStatus(message, progress) {
+  const status = document.getElementById('rescanStatus');
+  const bar = document.getElementById('rescanBar');
+  if (status) status.textContent = message;
+  if (bar && typeof progress === 'number') bar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+}
+
+let scanEventSource = null;
+let scanComplete = false;
+let scanInFlight = false;
+
+async function startRescan() {
+  if (scanInFlight) return;
+  scanInFlight = true;
+  scanComplete = false;
+  showRescanOverlay();
+  setRescanStatus('Starting scan…', 5);
+
+  const es = new EventSource('/api/scan');
+  scanEventSource = es;
+
+  es.addEventListener('status', (evt) => {
+    try {
+      const payload = JSON.parse(evt.data);
+      setRescanStatus(payload.message || 'Scanning…', payload.progress ?? 10);
+    } catch {}
+  });
+
+  es.addEventListener('done', (evt) => {
+    scanComplete = true;
+    try {
+      const payload = JSON.parse(evt.data);
+      setRescanStatus(payload.message || 'Scan complete', 100);
+    } catch {
+      setRescanStatus('Scan complete', 100);
+    }
+    setTimeout(() => {
+      es.close();
+      scanEventSource = null;
+      scanInFlight = false;
+      window.location.reload();
+    }, 600);
+  });
+
+  es.addEventListener('error', () => {
+    if (scanComplete) return;
+    setRescanStatus('Unable to start scan', 0);
+    setTimeout(() => {
+      try { es.close(); } catch {}
+      scanEventSource = null;
+      scanInFlight = false;
+      hideRescanOverlay();
+      showToast('Scan failed to start');
+    }, 800);
+  });
+}
+
+async function copyScanCommand() {
+  const cmd = scanCommand();
+  try {
+    await navigator.clipboard.writeText(cmd);
+    showToast('Scan command copied to clipboard');
+  } catch {
+    window.prompt('Copy this command:', cmd);
+  }
+}
+
+async function handleScanAction() {
+  const isServer = await detectServerMode();
+  if (isServer) {
+    startRescan();
+  } else {
+    copyScanCommand();
+  }
+}
+
+async function initScanButtons() {
+  const isServer = await detectServerMode();
+  document.querySelectorAll('[data-scan-action]').forEach(btn => {
+    const label = btn.querySelector('.scan-label');
+    if (label) label.textContent = isServer ? 'Rescan' : 'Run Scan';
+    btn.title = isServer ? 'Rescan this project' : 'Copy: preflight scan';
+  });
 }
 
 // ============================================================================
@@ -142,15 +281,15 @@ function fileIcon(ext) {
 // ============================================================================
 function toRelativePath(filePath) {
   // Normalize to CWD-relative path (suppressions use CWD-relative paths)
-  // scanRoot may be a subdirectory; we need paths relative to where .clawsec/ lives
+  // scanRoot may be a subdirectory; we need paths relative to where .preflight/ lives
   // The CWD is the parent of scanRoot when scanning a subdirectory
   // For absolute paths, strip the common prefix up to the project root
   if (filePath.startsWith('/')) {
-    // Find the project root (parent of .clawsec/) by walking up from scanRoot
+    // Find the project root (parent of .preflight/) by walking up from scanRoot
     // Heuristic: use the longest prefix that matches the beginning of scanRoot
     const scanParts = data.scanRoot.split('/');
     // Try progressively shorter prefixes to find the project root
-    // The .clawsec dir is at the project root, which is the CWD
+    // The .preflight dir is at the project root, which is the CWD
     // We assume CWD is a prefix of scanRoot, so use shortest matching prefix
     for (let i = scanParts.length; i >= 1; i--) {
       const prefix = scanParts.slice(0, i).join('/');
@@ -193,7 +332,7 @@ function toggleSuppression(ruleId, file) {
         btn.className = 'suppress-btn px-2.5 py-1 rounded-md text-xs font-medium border transition-colors '
           + (isSup
             ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
-            : 'border-slate-600 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-500');
+            : 'border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50');
       }
     }
   });
@@ -219,7 +358,7 @@ function updateSuppressionsBar() {
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'suppressions-bar';
-    bar.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-3 rounded-xl bg-surface-dark border border-border-dark shadow-2xl';
+    bar.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-3 rounded-xl bg-white border border-slate-200 shadow-2xl';
     document.body.appendChild(bar);
   }
 
@@ -231,7 +370,7 @@ function updateSuppressionsBar() {
       + '<span class="material-symbols-outlined text-sm">download</span>Save</button>';
 
   bar.innerHTML = '<span class="material-symbols-outlined text-yellow-500">shield</span>'
-    + '<span class="text-sm text-slate-300"><span class="text-white font-bold">' + count + '</span> finding'
+    + '<span class="text-sm text-slate-600"><span class="text-slate-900 font-bold">' + count + '</span> finding'
     + (count !== 1 ? 's' : '') + ' suppressed'
     + (nc > 0 ? ' <span class="text-yellow-500">(' + nc + ' new)</span>' : '')
     + '</span>'
@@ -277,7 +416,7 @@ async function saveSuppressions() {
         body: JSON.stringify(output),
       });
       if (res.ok) {
-        showToast('Saved to .clawsec/suppressions.json');
+        showToast('Saved to .preflight/suppressions.json');
         return;
       }
     } catch {}
@@ -298,6 +437,7 @@ async function saveSuppressions() {
 // ============================================================================
 const grade = gradeInfo(data.score);
 const total = data.summary.total || 0;
+const projectName = data.projectName || (data.scanRoot ? data.scanRoot.split('/').pop() : 'Project');
 
 // Group findings by file
 const fileMap = new Map();
@@ -345,7 +485,7 @@ function renderSidebar() {
     const label = count === 1 ? '1 issue' : count + ' issues';
 
     fileItems += `
-      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 transition-all group"
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-all group"
          onclick="event.preventDefault(); scrollToFile('${esc(file)}')">
         <span class="material-symbols-outlined ${sevCls} text-[20px]" style="font-variation-settings: 'FILL' 1">${dot}</span>
         <div class="flex flex-col flex-1 min-w-0">
@@ -357,24 +497,24 @@ function renderSidebar() {
 
   return `
     <div class="p-6 flex items-center gap-3">
-      <div class="size-10 rounded-lg bg-gradient-to-br from-primary to-blue-700 flex items-center justify-center text-white shadow-lg shadow-primary/20">
-        <span class="material-symbols-outlined text-2xl">pets</span>
+      <div class="size-9 rounded-md bg-slate-900 flex items-center justify-center text-white">
+        <span class="material-symbols-outlined text-lg">shield</span>
       </div>
       <div class="flex flex-col">
-        <h1 class="text-white text-lg font-bold leading-none tracking-tight">ClawSec</h1>
-        <p class="text-slate-400 text-xs font-medium mt-1">Security Scanner</p>
+        <h1 class="text-slate-900 text-lg font-bold leading-none tracking-tight">Preflight</h1>
+        <p class="text-slate-600 text-xs font-medium mt-1">Security Scanner</p>
       </div>
     </div>
 
     <div class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-6">
       <div class="flex flex-col gap-1">
         <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Menu</p>
-        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary text-white shadow-md shadow-primary/10 transition-all"
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-100 text-slate-900 transition-all"
            onclick="event.preventDefault(); showView('overview')">
           <span class="material-symbols-outlined text-[22px]">dashboard</span>
           <span class="text-sm font-medium">Overview</span>
         </a>
-        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all"
            onclick="event.preventDefault(); showView('findings')">
           <span class="material-symbols-outlined text-[22px]">bug_report</span>
           <span class="text-sm font-medium">All Findings</span>
@@ -387,14 +527,14 @@ function renderSidebar() {
       </div>
     </div>
 
-    <div class="p-4 border-t border-border-dark">
-      <div class="flex items-center gap-3 p-2 rounded-lg bg-surface-dark border border-border-dark">
-        <div class="size-8 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center">
-          <span class="material-symbols-outlined text-slate-400 text-sm">terminal</span>
+    <div class="p-4 border-t border-slate-200">
+      <div class="flex items-center gap-3 p-2 rounded-lg bg-white border border-slate-200">
+        <div class="size-8 rounded-full bg-slate-100 flex items-center justify-center">
+          <span class="material-symbols-outlined text-slate-600 text-sm">terminal</span>
         </div>
         <div class="flex flex-col overflow-hidden">
-          <p class="text-sm font-medium text-white truncate">${esc(data.scanRoot.split('/').pop() || 'Project')}</p>
-          <p class="text-xs text-slate-400 truncate">${data.filesScanned} files scanned</p>
+          <p class="text-sm font-medium text-slate-900 truncate">${esc(projectName)}</p>
+          <p class="text-xs text-slate-600 truncate">${data.filesScanned} files scanned</p>
         </div>
       </div>
     </div>`;
@@ -415,11 +555,11 @@ function renderOverview() {
     const barPct = total > 0 ? Math.round((count / total) * 100) : 0;
     breakdownRows += `
       <div class="grid grid-cols-[100px_1fr_40px_40px] items-center gap-4">
-        <span class="text-sm font-medium text-slate-300 capitalize">${sev}</span>
-        <div class="h-3 w-full bg-background-dark rounded-full overflow-hidden">
+        <span class="text-sm font-medium text-slate-600 capitalize">${sev}</span>
+        <div class="h-3 w-full bg-slate-50 rounded-full overflow-hidden">
           <div class="h-full ${sevBarColors[sev]} rounded-full transition-all duration-500" style="width: ${barPct}%"></div>
         </div>
-        <span class="text-sm font-bold text-white text-right">${count}</span>
+        <span class="text-sm font-bold text-slate-900 text-right">${count}</span>
         <span class="text-xs font-medium text-slate-500 text-right">${barPct}%</span>
       </div>`;
   });
@@ -430,9 +570,9 @@ function renderOverview() {
     const filePaths = [...new Set(rg.findings.map(f => f.location.file))];
     const fileChips = filePaths.slice(0, 2).map(f => {
       const ext = f.split('.').pop() || '';
-      return `<div class="size-8 rounded-full bg-slate-800 border border-border-dark flex items-center justify-center text-[10px] text-slate-400" title="${esc(f)}">${esc(ext)}</div>`;
+      return `<div class="size-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] text-slate-600" title="${esc(f)}">${esc(ext)}</div>`;
     }).join('');
-    const moreFiles = filePaths.length > 2 ? `<div class="size-8 rounded-full bg-slate-800 border border-border-dark flex items-center justify-center text-[10px] text-slate-400">+${filePaths.length - 2}</div>` : '';
+    const moreFiles = filePaths.length > 2 ? `<div class="size-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] text-slate-600">+${filePaths.length - 2}</div>` : '';
 
     tableRows += `
       <tr class="group hover:bg-white/[0.02] transition-colors cursor-pointer" onclick="showView('findings'); setTimeout(function(){ expandRule('${esc(rg.ruleId)}') }, 100)">
@@ -444,18 +584,18 @@ function renderOverview() {
         </td>
         <td class="py-4 px-6">
           <div class="flex flex-col">
-            <span class="text-sm font-medium text-white">${esc(rg.ruleName)}</span>
+            <span class="text-sm font-medium text-slate-900">${esc(rg.ruleName)}</span>
             <span class="text-xs text-slate-500">${esc(rg.ruleId)} &middot; ${esc(rg.category)}</span>
           </div>
         </td>
         <td class="py-4 px-6 text-center">
-          <span class="text-sm font-medium text-slate-300">${rg.findings.length}</span>
+          <span class="text-sm font-medium text-slate-600">${rg.findings.length}</span>
         </td>
         <td class="py-4 px-6">
           <div class="flex -space-x-2">${fileChips}${moreFiles}</div>
         </td>
         <td class="py-4 px-6 text-right">
-          <button class="text-slate-500 hover:text-white transition-colors">
+          <button class="text-slate-500 hover:text-slate-900 transition-colors">
             <span class="material-symbols-outlined">chevron_right</span>
           </button>
         </td>
@@ -468,14 +608,18 @@ function renderOverview() {
         <!-- Header -->
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div class="flex flex-col gap-1">
-            <h2 class="text-3xl font-bold text-white tracking-tight">Security Report</h2>
-            <div class="flex items-center gap-2 text-slate-400">
+            <h2 class="text-3xl font-bold text-slate-900 tracking-tight">${esc(projectName)} Security Report</h2>
+            <div class="flex items-center gap-2 text-slate-600">
               <span class="material-symbols-outlined text-sm">schedule</span>
               <span class="text-sm">Scanned ${esc(timeAgo(data.timestamp))} &middot; ${esc(data.duration)}ms</span>
             </div>
           </div>
           <div class="flex gap-3">
-            <button onclick="exportJson()" class="px-4 py-2 rounded-lg border border-border-dark bg-surface-dark hover:bg-border-dark text-slate-300 text-sm font-medium transition-colors">
+            <button data-scan-action onclick="handleScanAction()" class="px-4 py-2 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-sm font-semibold transition-colors flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">play_arrow</span>
+              <span class="scan-label">Run Scan</span>
+            </button>
+            <button onclick="exportJson()" class="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium transition-colors">
               Export JSON
             </button>
           </div>
@@ -484,64 +628,64 @@ function renderOverview() {
         <!-- Grade & Stats -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <!-- Grade Card -->
-          <div class="lg:col-span-4 bg-surface-dark border border-border-dark rounded-xl p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden group">
-            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <span class="material-symbols-outlined text-white" style="font-size: 120px">verified_user</span>
+          <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-4 opacity-5">
+              <span class="material-symbols-outlined text-slate-900" style="font-size: 120px">verified_user</span>
             </div>
-            <h3 class="text-lg font-medium text-slate-200 z-10">Security Grade</h3>
-            <div class="relative size-40 rounded-full flex items-center justify-center z-10 shadow-2xl"
-                 style="background: conic-gradient(${grade.color} ${pct}%, #282b39 0); box-shadow: 0 25px 50px -12px ${grade.color}15;">
-              <div class="absolute inset-3 bg-surface-dark rounded-full flex flex-col items-center justify-center border border-border-dark">
-                <span class="text-5xl font-bold text-white tracking-tighter">${grade.letter}</span>
+            <h3 class="text-lg font-medium text-slate-600 z-10">Security Grade</h3>
+            <div class="relative size-40 rounded-full flex items-center justify-center z-10 shadow-sm"
+                 style="background: conic-gradient(${grade.color} ${pct}%, #e2e8f0 0);">
+              <div class="absolute inset-3 bg-white rounded-full flex flex-col items-center justify-center border border-slate-200">
+                <span class="text-5xl font-bold text-slate-900 tracking-tighter">${grade.letter}</span>
                 <span class="text-sm font-medium mt-1" style="color: ${grade.color}">${data.score}/100</span>
               </div>
             </div>
-            <p class="text-center text-sm text-slate-400 z-10 max-w-[80%]">
+            <p class="text-center text-sm text-slate-600 z-10 max-w-[80%]">
               ${total > 0
-                ? `Your project has <span class="text-white font-medium">${data.summary.critical} critical</span> and <span class="text-white font-medium">${data.summary.high} high</span> severity issues.`
+                ? `Your project has <span class="text-slate-900 font-medium">${data.summary.critical} critical</span> and <span class="text-slate-900 font-medium">${data.summary.high} high</span> severity issues.`
                 : '<span class="text-green-400 font-medium">No security issues detected.</span>'}
             </p>
           </div>
 
           <!-- Stats Cards -->
           <div class="lg:col-span-8 grid grid-cols-2 gap-4">
-            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+            <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
               <div class="flex justify-between items-start">
-                <span class="text-slate-400 text-sm font-medium">Files Scanned</span>
+                <span class="text-slate-600 text-sm font-medium">Files Scanned</span>
                 <span class="material-symbols-outlined text-slate-500">folder_open</span>
               </div>
               <div class="flex items-baseline gap-2 mt-4">
-                <span class="text-3xl font-bold text-white">${data.filesScanned}</span>
+                <span class="text-3xl font-bold text-slate-900">${data.filesScanned}</span>
                 <span class="text-xs text-slate-500 font-medium">files</span>
               </div>
             </div>
-            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+            <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
               <div class="flex justify-between items-start">
-                <span class="text-slate-400 text-sm font-medium">Rules Applied</span>
+                <span class="text-slate-600 text-sm font-medium">Rules Applied</span>
                 <span class="material-symbols-outlined text-slate-500">rule</span>
               </div>
               <div class="flex items-baseline gap-2 mt-4">
-                <span class="text-3xl font-bold text-white">${data.rulesApplied}</span>
+                <span class="text-3xl font-bold text-slate-900">${data.rulesApplied}</span>
                 <span class="text-xs text-slate-500 font-medium">rules</span>
               </div>
             </div>
-            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+            <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
               <div class="flex justify-between items-start">
-                <span class="text-slate-400 text-sm font-medium">Total Findings</span>
+                <span class="text-slate-600 text-sm font-medium">Total Findings</span>
                 <span class="material-symbols-outlined text-slate-500">bug_report</span>
               </div>
               <div class="flex items-baseline gap-2 mt-4">
-                <span class="text-3xl font-bold text-white">${total}</span>
+                <span class="text-3xl font-bold text-slate-900">${total}</span>
                 <span class="text-xs ${data.summary.critical > 0 ? 'text-red-400' : 'text-slate-500'} font-medium">${data.summary.critical > 0 ? data.summary.critical + ' critical' : 'findings'}</span>
               </div>
             </div>
-            <div class="bg-surface-dark border border-border-dark rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
+            <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-600 transition-colors">
               <div class="flex justify-between items-start">
-                <span class="text-slate-400 text-sm font-medium">Scan Time</span>
+                <span class="text-slate-600 text-sm font-medium">Scan Time</span>
                 <span class="material-symbols-outlined text-slate-500">timer</span>
               </div>
               <div class="flex items-baseline gap-2 mt-4">
-                <span class="text-3xl font-bold text-white">${data.duration}</span>
+                <span class="text-3xl font-bold text-slate-900">${data.duration}</span>
                 <span class="text-xs text-slate-500 font-medium">ms</span>
               </div>
             </div>
@@ -552,17 +696,17 @@ function renderOverview() {
         ${(data.suppressedCount || suppressedKeys.size) ? `
         <div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 flex items-center gap-3">
           <span class="material-symbols-outlined text-yellow-500">shield</span>
-          <span class="text-sm text-slate-300">
+          <span class="text-sm text-slate-600">
             <span class="text-yellow-500 font-bold">${suppressedKeys.size || data.suppressedCount}</span>
             finding${(suppressedKeys.size || data.suppressedCount) !== 1 ? 's' : ''} suppressed (marked safe)
           </span>
         </div>` : ''}
 
         <!-- Severity Breakdown -->
-        <div class="bg-surface-dark border border-border-dark rounded-xl p-6">
+        <div class="bg-white border border-slate-200 rounded-xl p-6">
           <div class="flex items-center justify-between mb-6">
-            <h3 class="text-lg font-bold text-white">Severity Breakdown</h3>
-            <button onclick="showView('findings')" class="text-xs text-primary hover:text-blue-400 font-medium">View all findings</button>
+            <h3 class="text-lg font-bold text-slate-900">Severity Breakdown</h3>
+            <button onclick="showView('findings')" class="text-xs text-primary hover:text-blue-600 font-medium">View all findings</button>
           </div>
           <div class="flex flex-col gap-5">
             ${breakdownRows}
@@ -571,38 +715,38 @@ function renderOverview() {
 
         <!-- Top Issues Table -->
         ${ruleGroups.length > 0 ? `
-        <div class="bg-surface-dark border border-border-dark rounded-xl overflow-hidden">
-          <div class="p-6 border-b border-border-dark flex justify-between items-center">
-            <h3 class="text-lg font-bold text-white">Top Issues Detected</h3>
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-slate-900">Top Issues Detected</h3>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
-                <tr class="bg-background-dark/50 border-b border-border-dark">
-                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[120px]">Severity</th>
-                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider">Rule</th>
-                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider text-center w-[100px]">Count</th>
-                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[200px]">Files</th>
-                  <th class="py-4 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[60px]"></th>
+                <tr class="bg-slate-50/50 border-b border-slate-200">
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-600 uppercase tracking-wider w-[120px]">Severity</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-600 uppercase tracking-wider">Rule</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-600 uppercase tracking-wider text-center w-[100px]">Count</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-600 uppercase tracking-wider w-[200px]">Files</th>
+                  <th class="py-4 px-6 text-xs font-semibold text-slate-600 uppercase tracking-wider w-[60px]"></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border-dark">
+              <tbody class="divide-y divide-slate-200">
                 ${tableRows}
               </tbody>
             </table>
           </div>
           ${ruleGroups.length > 10 ? `
-          <div class="p-4 border-t border-border-dark bg-background-dark/30 flex justify-center">
-            <button onclick="showView('findings')" class="text-sm text-slate-400 hover:text-white font-medium flex items-center gap-1 transition-colors">
+          <div class="p-4 border-t border-slate-200 bg-slate-50/30 flex justify-center">
+            <button onclick="showView('findings')" class="text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 transition-colors">
               View all ${ruleGroups.length} rules
               <span class="material-symbols-outlined text-sm">arrow_forward</span>
             </button>
           </div>` : ''}
         </div>` : `
-        <div class="bg-surface-dark border border-border-dark rounded-xl p-16 flex flex-col items-center justify-center gap-4">
+        <div class="bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center justify-center gap-4">
           <span class="material-symbols-outlined text-green-500" style="font-size: 48px">check_circle</span>
-          <h3 class="text-xl font-bold text-white">All Clear</h3>
-          <p class="text-slate-400 text-sm">No security findings detected in your project.</p>
+          <h3 class="text-xl font-bold text-slate-900">All Clear</h3>
+          <p class="text-slate-600 text-sm">No security findings detected in your project.</p>
         </div>`}
 
         <div class="h-10"></div>
@@ -631,7 +775,8 @@ function renderFindings() {
 
     // VS Code link
     const vscodePath = f.location.file.startsWith('/') ? f.location.file : data.scanRoot + '/' + f.location.file;
-    const vscodeLink = 'vscode://file/' + encodeURI(vscodePath) + ':' + startLine;
+    const vscodeLinkRaw = 'vscode://file/' + encodeURI(vscodePath) + ':' + startLine;
+    const vscodeLink = esc(vscodeLinkRaw);
 
     let codeHtml = '';
     if (ctxBefore.length > 0 || snippetLines.length > 0 || ctxAfter.length > 0) {
@@ -664,25 +809,25 @@ function renderFindings() {
 
       const codeLines = allLineData.map(d => {
         if (d.type === 'match') {
-          return '<div class="px-4 bg-red-500/20 border-l-2 border-red-500 whitespace-pre">' + d.text + '</div>';
+          return '<div class="px-4 bg-red-500/10 border-l-2 border-red-500 whitespace-pre">' + d.text + '</div>';
         }
-        return '<div class="px-4 hover:bg-white/5 whitespace-pre text-slate-400">' + d.text + '</div>';
+        return '<div class="px-4 hover:bg-slate-100 whitespace-pre text-slate-700">' + d.text + '</div>';
       }).join('\n');
 
       codeHtml = `
-        <div class="bg-[#111218] rounded-lg border border-slate-700 overflow-hidden font-mono text-xs leading-6">
-          <div class="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-slate-800 text-slate-400 text-[10px]">
+        <div class="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden font-mono text-xs leading-6">
+          <div class="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-b border-slate-200 text-slate-600 text-[10px]">
             <span>${esc(shortPath(f.location.file))}:${startLine}</span>
-            <a href="${vscodeLink}" class="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors no-underline" title="Open in VS Code">
+            <a href="${vscodeLink}" class="flex items-center gap-1 text-primary hover:text-blue-600 transition-colors no-underline" title="Open in VS Code">
               <span class="material-symbols-outlined" style="font-size: 14px">open_in_new</span>
               <span>Open in Editor</span>
             </a>
           </div>
           <div class="flex min-w-full">
-            <div class="flex flex-col text-right pr-4 pl-2 text-slate-600 select-none bg-[#161b22] border-r border-slate-800 py-2 min-w-[50px]">
+            <div class="flex flex-col text-right pr-4 pl-2 text-slate-500 select-none bg-slate-100 border-r border-slate-200 py-2 min-w-[50px]">
               ${lineNums}
             </div>
-            <div class="flex flex-col w-full py-2 text-slate-300 overflow-x-auto">
+            <div class="flex flex-col w-full py-2 text-slate-700 overflow-x-auto">
               ${codeLines}
             </div>
           </div>
@@ -690,15 +835,15 @@ function renderFindings() {
     }
 
     const remediationHtml = f.remediation ? `
-      <div class="bg-blue-900/20 p-3 rounded-lg border border-blue-900/50 flex gap-3">
-        <span class="material-symbols-outlined text-blue-400 flex-shrink-0" style="font-size: 20px">lightbulb</span>
+      <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 flex gap-3">
+        <span class="material-symbols-outlined text-primary flex-shrink-0" style="font-size: 20px">lightbulb</span>
         <div class="flex flex-col gap-1">
-          <p class="text-sm text-blue-100 font-medium">Remediation</p>
-          <p class="text-xs text-blue-300 leading-relaxed">${esc(f.remediation)}</p>
+          <p class="text-sm text-slate-700 font-medium">Remediation</p>
+          <p class="text-xs text-slate-600 leading-relaxed">${esc(f.remediation)}</p>
           ${f.metadata?.owasp || f.metadata?.cwe ? `
           <div class="mt-2 flex gap-2 flex-wrap">
-            ${f.metadata.owasp ? `<span class="text-[10px] uppercase font-bold text-blue-400 border border-blue-400/30 px-2 py-1 rounded">${esc(f.metadata.owasp)}</span>` : ''}
-            ${f.metadata.cwe ? `<span class="text-[10px] uppercase font-bold text-blue-400 border border-blue-400/30 px-2 py-1 rounded">${esc(f.metadata.cwe)}</span>` : ''}
+            ${f.metadata.owasp ? `<span class="text-[10px] uppercase font-bold text-slate-600 border border-slate-300 px-2 py-1 rounded">${esc(f.metadata.owasp)}</span>` : ''}
+            ${f.metadata.cwe ? `<span class="text-[10px] uppercase font-bold text-slate-600 border border-slate-300 px-2 py-1 rounded">${esc(f.metadata.cwe)}</span>` : ''}
           </div>` : ''}
         </div>
       </div>` : '';
@@ -708,14 +853,14 @@ function renderFindings() {
     const isSuppressed = suppressedKeys.has(suppressionKey(f.ruleId, f.location.file));
     const suppressBtnClass = isSuppressed
       ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
-      : 'border-slate-600 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-500';
+      : 'border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50';
 
     findingCards += `
-      <div class="finding-row bg-[#1e2330] rounded-lg border-l-4 ${sevBorderClass(f.severity)} shadow-md overflow-hidden ${isFirst ? 'expanded' : ''}${isSuppressed ? ' suppressed' : ''}"
+      <div class="finding-row bg-white rounded-lg border border-slate-200 border-l-4 ${sevBorderClass(f.severity)} shadow-sm overflow-hidden ${isFirst ? 'expanded' : ''}${isSuppressed ? ' suppressed' : ''}"
            data-sev="${f.severity}" data-rule="${esc(f.ruleId)}" data-file="${esc(f.location.file)}"
            data-text="${esc((f.ruleName + ' ' + f.ruleId + ' ' + f.message + ' ' + f.location.file + ' ' + f.category).toLowerCase())}">
         <!-- Summary (always visible) -->
-        <div class="p-4 flex items-center justify-between cursor-pointer hover:bg-[#252b3b] transition-colors" onclick="toggleFinding(this.parentNode)">
+        <div class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors" onclick="toggleFinding(this.parentNode)">
           <div class="flex gap-3 items-center">
             <span class="material-symbols-outlined ${sevTextClass(f.severity)}">${sevIcon(f.severity)}</span>
             <div>
@@ -723,7 +868,7 @@ function renderFindings() {
                 <span class="${sevTextClass(f.severity)} text-xs font-bold ${sevBgClass(f.severity).split(' ')[0]} px-1.5 rounded">${sevLabel}</span>
                 <span class="text-slate-500 text-xs font-mono">${esc(f.ruleId)}</span>
               </div>
-              <p class="text-slate-200 text-sm font-medium mt-0.5">${esc(f.ruleName)}</p>
+              <p class="text-slate-900 text-sm font-medium mt-0.5">${esc(f.ruleName)}</p>
             </div>
           </div>
           <div class="flex items-center gap-3">
@@ -736,13 +881,13 @@ function renderFindings() {
         </div>
 
         <!-- Detail (expandable) -->
-        <div class="finding-detail border-t border-slate-700/50 p-4 flex flex-col gap-4">
+        <div class="finding-detail border-t border-slate-200 p-4 flex flex-col gap-4">
           <div class="flex items-center justify-between text-sm">
-            <span class="text-slate-400">Location: <span class="text-white font-mono bg-slate-800 px-1.5 py-0.5 rounded text-xs">${esc(f.location.file)}:${f.location.startLine}</span></span>
+            <span class="text-slate-600">Location: <span class="text-slate-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs">${esc(f.location.file)}:${f.location.startLine}</span></span>
             <span class="text-slate-500 text-xs">${esc(f.category)}</span>
           </div>
 
-          <p class="text-sm text-slate-300">${esc(f.message)}</p>
+          <p class="text-sm text-slate-600">${esc(f.message)}</p>
 
           ${codeHtml}
           ${remediationHtml}
@@ -756,14 +901,18 @@ function renderFindings() {
         <!-- Header -->
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div class="flex flex-col gap-1">
-            <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <h2 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <span class="material-symbols-outlined text-primary">manage_search</span>
               All Findings
             </h2>
-            <p class="text-slate-400 text-sm">${total} findings across ${filesWithFindings.length} files</p>
+            <p class="text-slate-600 text-sm">${total} findings across ${filesWithFindings.length} files</p>
           </div>
           <div class="flex gap-3 items-center">
-            <button onclick="showView('overview')" class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-sm transition-colors">
+            <button data-scan-action onclick="handleScanAction()" class="px-3 py-1.5 rounded-md border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 text-sm font-semibold transition-colors flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-sm">play_arrow</span>
+              <span class="scan-label">Run Scan</span>
+            </button>
+            <button onclick="showView('overview')" class="px-3 py-1.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-900 text-sm transition-colors">
               <span class="material-symbols-outlined text-sm align-middle mr-1">arrow_back</span>Overview
             </button>
           </div>
@@ -774,25 +923,25 @@ function renderFindings() {
           <div class="relative flex-1 min-w-[200px]">
             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-lg">search</span>
             <input type="text" id="findingSearch" placeholder="Search findings..."
-              class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border-dark bg-surface-dark text-white text-sm outline-none focus:border-primary transition-colors"
+              class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 text-sm outline-none focus:border-primary transition-colors"
               oninput="filterFindings()" />
           </div>
           <div class="flex gap-1.5">
-            <button class="filter-btn active px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="all" onclick="setFilter(this)">All</button>
-            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="critical" onclick="setFilter(this)">Critical</button>
-            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="high" onclick="setFilter(this)">High</button>
-            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="medium" onclick="setFilter(this)">Medium</button>
-            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-border-dark bg-surface-dark text-slate-400 hover:text-white transition-all" data-sev="low" onclick="setFilter(this)">Low</button>
+            <button class="filter-btn active px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all" data-sev="all" onclick="setFilter(this)">All</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all" data-sev="critical" onclick="setFilter(this)">Critical</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all" data-sev="high" onclick="setFilter(this)">High</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all" data-sev="medium" onclick="setFilter(this)">Medium</button>
+            <button class="filter-btn px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all" data-sev="low" onclick="setFilter(this)">Low</button>
           </div>
         </div>
 
         <!-- Finding Cards -->
         <div id="findingsList" class="flex flex-col gap-3">
           ${findingCards || `
-          <div class="bg-surface-dark border border-border-dark rounded-xl p-16 flex flex-col items-center justify-center gap-4">
+          <div class="bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center justify-center gap-4">
             <span class="material-symbols-outlined text-green-500" style="font-size: 48px">check_circle</span>
-            <h3 class="text-xl font-bold text-white">All Clear</h3>
-            <p class="text-slate-400 text-sm">No security findings detected.</p>
+            <h3 class="text-xl font-bold text-slate-900">All Clear</h3>
+            <p class="text-slate-600 text-sm">No security findings detected.</p>
           </div>`}
         </div>
 
@@ -821,9 +970,9 @@ function showView(view) {
   navLinks.forEach(link => {
     const isActive = link.getAttribute('onclick').includes("'" + view + "'");
     if (isActive) {
-      link.className = link.className.replace('text-slate-400 hover:text-white hover:bg-white/5', '').replace('bg-primary text-white shadow-md shadow-primary/10', '') + ' bg-primary text-white shadow-md shadow-primary/10';
+      link.className = link.className.replace('text-slate-600 hover:text-slate-900 hover:bg-slate-100', '').replace('bg-slate-100 text-slate-900', '') + ' bg-slate-100 text-slate-900';
     } else {
-      link.className = link.className.replace('bg-primary text-white shadow-md shadow-primary/10', '') + ' text-slate-400 hover:text-white hover:bg-white/5';
+      link.className = link.className.replace('bg-slate-100 text-slate-900', '') + ' text-slate-600 hover:text-slate-900 hover:bg-slate-100';
     }
   });
 }
@@ -840,9 +989,9 @@ function toggleFinding(row) {
 let activeFilter = 'all';
 function setFilter(btn) {
   document.querySelectorAll('.filter-btn').forEach(b => {
-    b.classList.remove('active', 'border-white', 'text-white');
+    b.classList.remove('active', 'border-slate-900', 'text-slate-900');
   });
-  btn.classList.add('active', 'border-white', 'text-white');
+  btn.classList.add('active', 'border-slate-900', 'text-slate-900');
   activeFilter = btn.dataset.sev;
   filterFindings();
 }
@@ -896,7 +1045,7 @@ function exportJson() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'clawsec-report.json';
+  a.download = 'preflight-report.json';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -907,6 +1056,7 @@ function exportJson() {
 document.getElementById('sidebar').innerHTML = renderSidebar();
 showView('overview');
 updateSuppressionsBar();
+initScanButtons();
 </script>
 </body>
 </html>

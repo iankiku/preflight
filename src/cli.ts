@@ -1,14 +1,15 @@
 /**
- * ClawSec CLI Entry Point
+ * Preflight CLI Entry Point
  * Pipeline orchestrator: config → arg parsing → discovery → analysis → reporting
  */
 
-import { readFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, appendFileSync, copyFileSync, readdirSync } from 'node:fs';
 import { writeFile, readdir } from 'node:fs/promises';
 import { exec } from 'node:child_process';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 
 import { discoverFiles } from './discover.js';
 import { loadRules } from './rules/loader.js';
@@ -20,7 +21,7 @@ import { formatJson } from './reporters/json.js';
 import { formatSarif } from './reporters/sarif.js';
 import { formatDashboard } from './reporters/dashboard.js';
 import { formatAgentJson, formatAgentMarkdown } from './reporters/agent.js';
-import { isSeverityAtLeast, c, severityColor } from './utils.js';
+import { isSeverityAtLeast, c, severityColor, sanitizeForTerminal } from './utils.js';
 import { isInteractive, link, fileUrl } from './ui.js';
 import * as p from '@clack/prompts';
 import type { ScanResult, ScanOptions, Severity, Rule, Suppression, SuppressionsFile, Finding } from './types.js';
@@ -31,23 +32,25 @@ import type { ScanResult, ScanOptions, Severity, Rule, Suppression, Suppressions
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8'));
+const PKG_ROOT = path.resolve(__dirname, '..');
 const VERSION: string = pkg.version;
 
 // ============================================================================
 // Config File
 // ============================================================================
 
-const CLAWSEC_DIR = '.clawsec';
+const PREFLIGHT_DIR = '.preflight';
 const SETTINGS_FILENAME = 'settings.json';
 const SCANS_DIR = 'scans';
 
-interface ClawSecConfig {
+interface PreflightConfig {
   scan?: {
     paths?: string[];
     ignore?: string[];
     severity?: Severity;
     severities?: Severity[];
     format?: 'table' | 'json' | 'sarif' | 'agent';
+    onlySkills?: boolean;
   };
   rules?: {
     disable?: string[];
@@ -64,26 +67,68 @@ interface ClawSecConfig {
   };
 }
 
-function clawsecDir(cwd: string): string {
-  return path.resolve(cwd, CLAWSEC_DIR);
+function resolveProjectName(scanRoot: string): string {
+  const root = path.extname(scanRoot) ? path.dirname(scanRoot) : scanRoot;
+  try {
+    const pkgPath = path.join(root, 'package.json');
+    if (existsSync(pkgPath)) {
+      const pkgRaw = readFileSync(pkgPath, 'utf-8');
+      const pkgJson = JSON.parse(pkgRaw) as { name?: string };
+      if (pkgJson.name && typeof pkgJson.name === 'string') return pkgJson.name;
+    }
+  } catch {
+    // ignore
+  }
+
+  const yamlCandidates = ['project.yml', 'project.yaml'];
+  for (const filename of yamlCandidates) {
+    try {
+      const yamlPath = path.join(root, filename);
+      if (!existsSync(yamlPath)) continue;
+      const raw = readFileSync(yamlPath, 'utf-8');
+      const parsed = parseYaml(raw) as { name?: string } | undefined;
+      if (parsed && typeof parsed.name === 'string') return parsed.name;
+    } catch {
+      // ignore
+    }
+  }
+
+  return path.basename(root) || 'Project';
+}
+
+function preflightDir(cwd: string): string {
+  return path.resolve(cwd, PREFLIGHT_DIR);
 }
 
 function settingsPath(cwd: string): string {
-  return path.join(clawsecDir(cwd), SETTINGS_FILENAME);
+  return path.join(preflightDir(cwd), SETTINGS_FILENAME);
 }
 
 function scansDir(cwd: string): string {
-  return path.join(clawsecDir(cwd), SCANS_DIR);
+  return path.join(preflightDir(cwd), SCANS_DIR);
 }
 
-function loadConfig(cwd: string): ClawSecConfig | null {
+function copyDashboardAssets(cwd: string): void {
+  const assetsSrc = path.resolve(PKG_ROOT, 'src', 'assets');
+  const assetsDest = path.join(scansDir(cwd), 'assets');
+  if (!existsSync(assetsSrc)) return;
+  if (!existsSync(assetsDest)) mkdirSync(assetsDest, { recursive: true });
+
+  for (const file of readdirSync(assetsSrc)) {
+    const from = path.join(assetsSrc, file);
+    const to = path.join(assetsDest, file);
+    copyFileSync(from, to);
+  }
+}
+
+function loadConfig(cwd: string): PreflightConfig | null {
   const cfgPath = settingsPath(cwd);
   if (!existsSync(cfgPath)) return null;
   try {
     const raw = readFileSync(cfgPath, 'utf-8');
-    return JSON.parse(raw) as ClawSecConfig;
+    return JSON.parse(raw) as PreflightConfig;
   } catch (e) {
-    process.stderr.write(`${c.yellow('warning:')} Failed to parse ${CLAWSEC_DIR}/${SETTINGS_FILENAME}: ${e instanceof Error ? e.message : e}\n`);
+    process.stderr.write(`${c.yellow('warning:')} Failed to parse ${PREFLIGHT_DIR}/${SETTINGS_FILENAME}: ${e instanceof Error ? e.message : e}\n`);
     return null;
   }
 }
@@ -95,7 +140,7 @@ function loadConfig(cwd: string): ClawSecConfig | null {
 const SUPPRESSIONS_FILENAME = 'suppressions.json';
 
 function suppressionsPath(cwd: string): string {
-  return path.join(clawsecDir(cwd), SUPPRESSIONS_FILENAME);
+  return path.join(preflightDir(cwd), SUPPRESSIONS_FILENAME);
 }
 
 function loadSuppressions(cwd: string): Suppression[] {
@@ -108,7 +153,7 @@ function loadSuppressions(cwd: string): Suppression[] {
     return parsed.suppressions;
   } catch (e) {
     process.stderr.write(
-      `${c.yellow('warning:')} Failed to parse ${CLAWSEC_DIR}/${SUPPRESSIONS_FILENAME}: ${e instanceof Error ? e.message : e}\n`,
+      `${c.yellow('warning:')} Failed to parse ${PREFLIGHT_DIR}/${SUPPRESSIONS_FILENAME}: ${e instanceof Error ? e.message : e}\n`,
     );
     return [];
   }
@@ -155,20 +200,20 @@ function applySuppressions(
 // ============================================================================
 
 const HELP = `
-${c.bold('ClawSec')} — Security scanner for AI
+${c.bold('Preflight')} — Security scanner for AI
 
 ${c.bold('USAGE')}
-  clawsec                          Quick start guide
-  clawsec init                     Set up .clawsec/ in this project
-  clawsec scan [path] [options]    Run a security scan
-  clawsec dashboard                Serve scan results on local server
-  clawsec rules                    List available security rules
-  clawsec test-rules               Validate all rules against fixtures
-  clawsec help                     Show this help
+  preflight                          Quick start guide
+  preflight init                     Set up .preflight/ in this project
+  preflight scan [path] [options]    Run a security scan
+  preflight dashboard                Serve scan results on local server
+  preflight rules                    List available security rules
+  preflight test-rules               Validate all rules against fixtures
+  preflight help                     Show this help
 
 ${c.bold('OPTIONS')}
   -f, --format <fmt>        Output format: table, json, sarif, agent (default: table)
-  -o, --output <file>       Write results to file instead of .clawsec/scans/
+  -o, --output <file>       Write results to file instead of .preflight/scans/
   -s, --severity <level>    Minimum severity: critical, high, medium, low, info
   --fail-on <level>         Exit code 1 if findings at/above severity
   --score-threshold <n>     Exit code 1 if score below n
@@ -176,25 +221,31 @@ ${c.bold('OPTIONS')}
   -e, --enable <ids>        Enable only these rules (comma-separated)
   -d, --disable <ids>       Disable these rules (comma-separated)
   -r, --rules <files>       Additional rule files (comma-separated)
-  --no-config               Ignore .clawsec/settings.json
+  --all-files               Scan all files (disable skills-only mode)
+  --no-config               Ignore .preflight/settings.json
   --no-output               Don't write scan results to disk
   -p, --port <n>            Dashboard server port (default: 7700)
+  --host <host>             Dashboard server host (default: 127.0.0.1)
   --quiet                   Suppress output except exit code
   -h, --help                Show this help
   -v, --version             Show version
 
 ${c.bold('CONFIG')}
-  Run ${c.cyan('clawsec init')} to create .clawsec/ with default settings.
+  Run ${c.cyan('preflight init')} to create .preflight/ with default settings.
   CLI flags override settings.json values.
 
+${c.bold('SCOPE')}
+  Default: only files named ${c.cyan('skills.md')} or ${c.cyan('SKILLS.MD')} are scanned.
+  Use ${c.cyan('--all-files')} to scan everything.
+
 ${c.bold('FILES')}
-  .clawsec/
+  .preflight/
     settings.json            Configuration
     scans/                   Scan results (JSON + HTML)
 
 ${c.bold('INSTALL')}
-  npm install clawsec -g     Global install
-  npm install clawsec -D     Project dev dependency
+  npm install preflight -g     Global install
+  npm install preflight -D     Project dev dependency
 `.trim();
 
 // ============================================================================
@@ -216,7 +267,9 @@ interface ParsedArgs {
   enableRules?: string[];
   disableRules?: string[];
   ruleFiles?: string[];
+  allFiles?: boolean;
   port: number;
+  host: string;
   quiet: boolean;
   help: boolean;
   version: boolean;
@@ -225,10 +278,11 @@ interface ParsedArgs {
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const result: ParsedArgs = {
+const result: ParsedArgs = {
     command: 'default',
     paths: [],
     port: 7700,
+    host: '127.0.0.1',
     quiet: false,
     help: false,
     version: false,
@@ -264,6 +318,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-output':
         result.noOutput = true;
+        break;
+      case '--all-files':
+        result.allFiles = true;
         break;
       case '-f':
       case '--format': {
@@ -309,6 +366,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--port':
         result.port = Number(argv[++i]);
         break;
+      case '--host':
+        result.host = argv[++i];
+        break;
       default:
         if (arg.startsWith('-')) {
           process.stderr.write(`Unknown flag: ${arg}\n`);
@@ -338,7 +398,7 @@ function parseSeverity(value: string): Severity {
 // Merge Config + Args
 // ============================================================================
 
-function mergeConfigWithArgs(config: ClawSecConfig | null, args: ParsedArgs): ParsedArgs {
+function mergeConfigWithArgs(config: PreflightConfig | null, args: ParsedArgs): ParsedArgs {
   if (!config) return args;
 
   // Config provides defaults, CLI args override
@@ -377,16 +437,37 @@ function mergeConfigWithArgs(config: ClawSecConfig | null, args: ParsedArgs): Pa
   if (config.ci?.scoreThreshold !== undefined && merged.scoreThreshold === undefined) {
     merged.scoreThreshold = config.ci.scoreThreshold;
   }
+  if (config.scan?.onlySkills !== undefined && merged.allFiles === undefined) {
+    merged.allFiles = !config.scan.onlySkills;
+  }
 
   return merged;
+}
+
+function buildScanOptions(args: ParsedArgs): ScanOptions {
+  return {
+    paths: args.paths,
+    format: args.format || 'table',
+    output: args.output,
+    minSeverity: args.minSeverity,
+    severities: args.severities,
+    failOn: args.failOn,
+    scoreThreshold: args.scoreThreshold,
+    excludePatterns: args.excludePatterns,
+    enableRules: args.enableRules,
+    disableRules: args.disableRules,
+    ruleFiles: args.ruleFiles,
+    onlySkills: args.allFiles ? false : true,
+    quiet: args.quiet,
+  };
 }
 
 // ============================================================================
 // Init Command
 // ============================================================================
 
-function ensureClawsecDir(cwd: string): void {
-  const dir = clawsecDir(cwd);
+function ensurePreflightDir(cwd: string): void {
+  const dir = preflightDir(cwd);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const scans = scansDir(cwd);
   if (!existsSync(scans)) mkdirSync(scans, { recursive: true });
@@ -394,7 +475,7 @@ function ensureClawsecDir(cwd: string): void {
 
 function addToGitignore(cwd: string): void {
   const gitignorePath = path.resolve(cwd, '.gitignore');
-  const entry = '.clawsec/';
+  const entry = '.preflight/';
 
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, 'utf-8');
@@ -418,18 +499,19 @@ async function runInitNonInteractive(): Promise<void> {
   const cwd = process.cwd();
 
   if (existsSync(settingsPath(cwd))) {
-    process.stderr.write(`${c.yellow('exists:')} ${CLAWSEC_DIR}/ already initialized\n`);
+    process.stderr.write(`${c.yellow('exists:')} ${PREFLIGHT_DIR}/ already initialized\n`);
     process.exit(1);
   }
 
-  ensureClawsecDir(cwd);
+  ensurePreflightDir(cwd);
 
-  const defaultConfig: ClawSecConfig = {
+  const defaultConfig: PreflightConfig = {
     scan: {
       paths: ['.'],
       ignore: ['docs/**', '**/fixtures/**'],
       severity: 'low',
       format: 'table',
+      onlySkills: true,
     },
     rules: {
       disable: [],
@@ -447,24 +529,24 @@ async function runInitNonInteractive(): Promise<void> {
   await writeFile(settingsPath(cwd), JSON.stringify(defaultConfig, null, 2) + '\n');
   addToGitignore(cwd);
 
-  console.log(`${c.green('created')} ${CLAWSEC_DIR}/`);
-  console.log(`  ${c.dim('settings')}  ${CLAWSEC_DIR}/${SETTINGS_FILENAME}`);
-  console.log(`  ${c.dim('scans')}     ${CLAWSEC_DIR}/${SCANS_DIR}/`);
-  console.log(`  ${c.dim('gitignore')} .clawsec/ added to .gitignore`);
+  console.log(`${c.green('created')} ${PREFLIGHT_DIR}/`);
+  console.log(`  ${c.dim('settings')}  ${PREFLIGHT_DIR}/${SETTINGS_FILENAME}`);
+  console.log(`  ${c.dim('scans')}     ${PREFLIGHT_DIR}/${SCANS_DIR}/`);
+  console.log(`  ${c.dim('gitignore')} .preflight/ added to .gitignore`);
   console.log('');
   console.log('  Run a scan:');
-  console.log(`  ${c.cyan('clawsec scan')}`);
+  console.log(`  ${c.cyan('preflight scan')}`);
   console.log('');
 }
 
 async function runInitInteractive(): Promise<void> {
   const cwd = process.cwd();
 
-  p.intro(`${c.bold('ClawSec')}${c.dim(' — Project Setup')}`);
+  p.intro(`${c.bold('Preflight')}${c.dim(' — Project Setup')}`);
 
   // Check if already initialized
   if (existsSync(settingsPath(cwd))) {
-    p.log.warn('.clawsec/ already exists in this project.');
+    p.log.warn('.preflight/ already exists in this project.');
     const shouldOverwrite = await p.confirm({
       message: 'Overwrite existing configuration?',
     });
@@ -485,7 +567,7 @@ async function runInitInteractive(): Promise<void> {
 
   if (dirs.length > 1) {
     const selectedPaths = await p.multiselect({
-      message: 'Which directories should ClawSec scan?',
+      message: 'Which directories should Preflight scan?',
       options: [
         { value: '.', label: '. (entire project)', hint: 'recommended' },
         ...dirs.map(d => ({ value: d, label: d })),
@@ -523,16 +605,17 @@ async function runInitInteractive(): Promise<void> {
 
   // Create files
   const s = p.spinner();
-  s.start('Creating .clawsec/ directory');
+  s.start('Creating .preflight/ directory');
 
-  ensureClawsecDir(cwd);
+  ensurePreflightDir(cwd);
 
-  const config: ClawSecConfig = {
+  const config: PreflightConfig = {
     scan: {
       paths: scanPaths,
       ignore: ['docs/**', '**/fixtures/**'],
       severities: severities as Severity[],
       format: 'table',
+      onlySkills: true,
     },
     rules: {
       disable: [],
@@ -550,16 +633,16 @@ async function runInitInteractive(): Promise<void> {
   await writeFile(settingsPath(cwd), JSON.stringify(config, null, 2) + '\n');
   addToGitignore(cwd);
 
-  s.stop('Created .clawsec/');
+  s.stop('Created .preflight/');
 
   p.note(
     `  settings.json   Configuration\n` +
     `  scans/          Scan results\n` +
     `  .gitignore      Updated`,
-    '.clawsec/',
+    '.preflight/',
   );
 
-  p.outro(`Next step: ${c.cyan('clawsec scan')}`);
+  p.outro(`Next step: ${c.cyan('preflight scan')}`);
 }
 
 // ============================================================================
@@ -573,6 +656,7 @@ async function runScan(paths: string[], options: ScanOptions): Promise<{ result:
   if (!options.quiet) process.stderr.write('Discovering files...\n');
   const files = await discoverFiles(scanRoot, {
     ignore: options.excludePatterns,
+    onlySkills: options.onlySkills,
   });
   if (!options.quiet) process.stderr.write(`Found ${files.length} files\n`);
 
@@ -587,7 +671,7 @@ async function runScan(paths: string[], options: ScanOptions): Promise<{ result:
   const rawFindings = await analyze(files, rules);
   const findings = deduplicate(rawFindings);
 
-  // Apply suppressions (from .clawsec/suppressions.json)
+  // Apply suppressions (from .preflight/suppressions.json)
   const cwd = process.cwd();
   const suppressions = loadSuppressions(cwd);
   const { active: unsuppressed, suppressedCount } = applySuppressions(findings, suppressions, cwd);
@@ -613,6 +697,7 @@ async function runScan(paths: string[], options: ScanOptions): Promise<{ result:
     timestamp: new Date().toISOString(),
     duration: Date.now() - startTime,
     scanRoot,
+    projectName: resolveProjectName(scanRoot),
     filesScanned: files.length,
     rulesApplied: rules.length,
     score,
@@ -626,6 +711,100 @@ async function runScan(paths: string[], options: ScanOptions): Promise<{ result:
   return { result, rules };
 }
 
+type ScanStatusUpdate = {
+  phase: 'start' | 'discover' | 'rules' | 'analyze' | 'finalize' | 'done';
+  message: string;
+  progress: number;
+  meta?: Record<string, number | string>;
+};
+
+async function runScanWithStatus(
+  paths: string[],
+  options: ScanOptions,
+  onStatus: (update: ScanStatusUpdate) => void,
+): Promise<{ result: ScanResult; rules: Rule[] }> {
+  const startTime = Date.now();
+  const scanRoot = path.resolve(paths[0] || '.');
+
+  onStatus({ phase: 'start', message: 'Starting scan', progress: 5 });
+
+  onStatus({ phase: 'discover', message: 'Discovering files', progress: 15 });
+  const files = await discoverFiles(scanRoot, {
+    ignore: options.excludePatterns,
+    onlySkills: options.onlySkills,
+  });
+  onStatus({
+    phase: 'discover',
+    message: `Found ${files.length} files`,
+    progress: 25,
+    meta: { filesScanned: files.length },
+  });
+
+  onStatus({ phase: 'rules', message: 'Loading rules', progress: 35 });
+  const { rules, errors: ruleErrors } = await loadRules({
+    includeBuiltin: true,
+    customFiles: options.ruleFiles,
+    enableRules: options.enableRules,
+    disableRules: options.disableRules,
+  });
+  onStatus({
+    phase: 'rules',
+    message: `Loaded ${rules.length} rules`,
+    progress: 45,
+    meta: { rulesApplied: rules.length },
+  });
+
+  onStatus({
+    phase: 'analyze',
+    message: `Analyzing ${files.length} files`,
+    progress: 65,
+  });
+  const rawFindings = await analyze(files, rules);
+  const findings = deduplicate(rawFindings);
+
+  const cwd = process.cwd();
+  const suppressions = loadSuppressions(cwd);
+  const { active: unsuppressed, suppressedCount } = applySuppressions(findings, suppressions, cwd);
+
+  let filtered = unsuppressed;
+  if (options.minSeverity) {
+    filtered = unsuppressed.filter(f => isSeverityAtLeast(f.severity, options.minSeverity!));
+  } else if (options.severities) {
+    const allowed = new Set(options.severities);
+    filtered = unsuppressed.filter(f => allowed.has(f.severity));
+  }
+
+  const score = calculateScore(filtered);
+  onStatus({
+    phase: 'analyze',
+    message: `Analysis complete — ${filtered.length} findings`,
+    progress: 80,
+    meta: { findings: filtered.length },
+  });
+
+  const summary = { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: filtered.length };
+  for (const f of filtered) summary[f.severity]++;
+
+  const result: ScanResult = {
+    timestamp: new Date().toISOString(),
+    duration: Date.now() - startTime,
+    scanRoot,
+    projectName: resolveProjectName(scanRoot),
+    filesScanned: files.length,
+    rulesApplied: rules.length,
+    score,
+    findings: filtered,
+    summary,
+    errors: ruleErrors.map(e => ({ message: e })),
+    suppressedCount,
+    suppressions: suppressions.length > 0 ? suppressions : undefined,
+  };
+
+  onStatus({ phase: 'finalize', message: 'Writing report', progress: 92 });
+
+  return { result, rules };
+}
+
 async function runScanWithProgress(
   paths: string[],
   options: ScanOptions,
@@ -633,7 +812,7 @@ async function runScanWithProgress(
   const startTime = Date.now();
   const scanRoot = path.resolve(paths[0] || '.');
 
-  p.intro(`${c.bold('ClawSec')}${c.dim(' — Security Scan')}`);
+  p.intro(`${c.bold('Preflight')}${c.dim(' — Security Scan')}`);
 
   const s = p.spinner();
 
@@ -641,6 +820,7 @@ async function runScanWithProgress(
   s.start('Discovering files...');
   const files = await discoverFiles(scanRoot, {
     ignore: options.excludePatterns,
+    onlySkills: options.onlySkills,
   });
   s.stop(`Found ${c.bold(String(files.length))} files`);
 
@@ -706,6 +886,7 @@ async function runScanWithProgress(
     timestamp: new Date().toISOString(),
     duration: Date.now() - startTime,
     scanRoot,
+    projectName: resolveProjectName(scanRoot),
     filesScanned: files.length,
     rulesApplied: rules.length,
     score,
@@ -739,7 +920,7 @@ async function runRulesCommand(): Promise<void> {
     byCategory.set(rule.category, list);
   }
 
-  console.log(`\n${c.bold('ClawSec Rules')} (${rules.length} total)\n`);
+  console.log(`\n${c.bold('Preflight Rules')} (${rules.length} total)\n`);
 
   for (const [category, categoryRules] of byCategory) {
     console.log(`  ${c.bold(c.cyan(category))}`);
@@ -794,7 +975,7 @@ async function runTestRules(): Promise<number> {
   let passed = 0;
   let failed = 0;
 
-  console.log(`\n${c.bold('ClawSec Rule Tests')}\n`);
+  console.log(`\n${c.bold('Preflight Rule Tests')}\n`);
 
   for (const dir of fixtureDirs.sort()) {
     const ruleId = dir;
@@ -809,7 +990,7 @@ async function runTestRules(): Promise<number> {
     const negativePath = findFixtureFile(dir, 'negative');
 
     // Test positive case — expect at least 1 finding
-    const positiveFiles = await discoverFiles(positivePath);
+    const positiveFiles = await discoverFiles(positivePath, { onlySkills: false });
     const positiveFindings = await analyze(positiveFiles, [rule]);
     const positiveMatch = positiveFindings.some(f => f.ruleId === ruleId);
 
@@ -823,7 +1004,7 @@ async function runTestRules(): Promise<number> {
 
     // Test negative case — expect 0 findings (if file exists)
     if (negativePath) {
-      const negativeFiles = await discoverFiles(negativePath);
+      const negativeFiles = await discoverFiles(negativePath, { onlySkills: false });
       const negativeFindings = await analyze(negativeFiles, [rule]);
       const negativeMatch = negativeFindings.some(f => f.ruleId === ruleId);
 
@@ -848,18 +1029,47 @@ async function runTestRules(): Promise<number> {
 function createDashboardServer(cwd: string): ReturnType<typeof createServer> {
   const scans = scansDir(cwd);
   const htmlPath = path.join(scans, 'report.html');
+  const assetsDir = path.join(scans, 'assets');
+  let scanInProgress = false;
+
+  function sendSse(
+    res: import('node:http').ServerResponse,
+    event: string,
+    payload: Record<string, unknown>,
+  ): void {
+    if ((res as any).writableEnded) return;
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  }
 
   return createServer(async (req, res) => {
-    if (req.url === '/' || req.url === '/index.html') {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    if (url.pathname === '/' || url.pathname === '/index.html') {
       if (!existsSync(htmlPath)) {
         res.writeHead(404);
-        res.end('No report found. Run clawsec scan first.');
+        res.end('No report found. Run preflight scan first.');
         return;
       }
       const html = readFileSync(htmlPath, 'utf-8');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
-    } else if (req.url === '/api/latest') {
+    } else if (url.pathname.startsWith('/assets/')) {
+      const rel = url.pathname.replace('/assets/', '');
+      const filePath = path.join(assetsDir, rel);
+      const normalized = path.normalize(filePath);
+      if (!normalized.startsWith(assetsDir) || !existsSync(normalized)) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+      const ext = path.extname(normalized);
+      const contentType =
+        ext === '.js' ? 'application/javascript; charset=utf-8'
+          : ext === '.ttf' ? 'font/ttf'
+            : 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(readFileSync(normalized));
+    } else if (url.pathname === '/api/latest') {
       const latestPath = path.join(scans, 'latest.json');
       if (existsSync(latestPath)) {
         const json = readFileSync(latestPath, 'utf-8');
@@ -869,7 +1079,7 @@ function createDashboardServer(cwd: string): ReturnType<typeof createServer> {
         res.writeHead(404);
         res.end('{}');
       }
-    } else if (req.url === '/api/scans') {
+    } else if (url.pathname === '/api/scans') {
       try {
         const files = await readdir(scans);
         const jsonFiles = files.filter(f => f.endsWith('.json')).sort().reverse();
@@ -879,10 +1089,78 @@ function createDashboardServer(cwd: string): ReturnType<typeof createServer> {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end('[]');
       }
-    } else if (req.url === '/api/health') {
+    } else if (url.pathname === '/api/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok' }));
-    } else if (req.url === '/api/suppressions' && req.method === 'POST') {
+    } else if (url.pathname === '/api/scan' && req.method === 'GET') {
+      if (scanInProgress) {
+        res.writeHead(409, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Scan already running');
+        return;
+      }
+
+      scanInProgress = true;
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      res.write(':ok\n\n');
+
+      try {
+        const config = loadConfig(cwd);
+        const baseArgs: ParsedArgs = {
+          command: 'scan',
+          paths: [],
+          format: 'table',
+          output: undefined,
+          minSeverity: undefined,
+          severities: undefined,
+          failOn: undefined,
+          scoreThreshold: undefined,
+          excludePatterns: undefined,
+          enableRules: undefined,
+          disableRules: undefined,
+          ruleFiles: undefined,
+          port: 7700,
+          host: '127.0.0.1',
+          quiet: true,
+          help: false,
+          version: false,
+          noConfig: false,
+          noOutput: false,
+        };
+        const merged = mergeConfigWithArgs(config, baseArgs);
+        merged.quiet = true;
+        merged.format = 'table';
+
+        const { result, rules } = await runScanWithStatus(merged.paths, buildScanOptions(merged), (update) => {
+          sendSse(res, 'status', update);
+        });
+
+        ensurePreflightDir(cwd);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const jsonPath = path.join(scansDir(cwd), `scan-${timestamp}.json`);
+        await writeFile(jsonPath, formatJson(result));
+        await writeFile(path.join(scansDir(cwd), 'latest.json'), formatJson(result));
+        await writeFile(path.join(scansDir(cwd), 'report.html'), formatDashboard(result));
+        copyDashboardAssets(cwd);
+
+        sendSse(res, 'done', {
+          message: `Scan complete — ${result.summary.total} findings`,
+          filesScanned: result.filesScanned,
+          findings: result.summary.total,
+        });
+      } catch (error) {
+        sendSse(res, 'error', {
+          message: error instanceof Error ? error.message : 'Scan failed',
+        });
+      } finally {
+        scanInProgress = false;
+        res.end();
+      }
+    } else if (url.pathname === '/api/suppressions' && req.method === 'POST') {
       let body = '';
       req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
       req.on('end', async () => {
@@ -894,7 +1172,7 @@ function createDashboardServer(cwd: string): ReturnType<typeof createServer> {
             return;
           }
           const supPath = suppressionsPath(cwd);
-          ensureClawsecDir(cwd);
+          ensurePreflightDir(cwd);
           await writeFile(supPath, JSON.stringify(parsed, null, 2) + '\n');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ saved: parsed.suppressions.length }));
@@ -903,7 +1181,7 @@ function createDashboardServer(cwd: string): ReturnType<typeof createServer> {
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
         }
       });
-    } else if (req.url === '/api/suppressions' && req.method === 'OPTIONS') {
+    } else if (url.pathname === '/api/suppressions' && req.method === 'OPTIONS') {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -927,18 +1205,18 @@ function openBrowser(url: string): void {
   exec(`${openCmd} ${url}`);
 }
 
-function startDashboardServer(cwd: string, port: number): Promise<number> {
+function startDashboardServer(cwd: string, port: number, host: string): Promise<number> {
   const server = createDashboardServer(cwd);
 
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       resolve(port);
     });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
         // Port taken, try next
-        server.listen(0, () => {
+        server.listen(0, host, () => {
           const addr = server.address();
           const actualPort = typeof addr === 'object' && addr ? addr.port : port;
           resolve(actualPort);
@@ -948,31 +1226,34 @@ function startDashboardServer(cwd: string, port: number): Promise<number> {
   });
 }
 
-async function runDashboard(port: number): Promise<void> {
+async function runDashboard(port: number, host: string): Promise<void> {
   const cwd = process.cwd();
   const scans = scansDir(cwd);
 
   if (!existsSync(scans)) {
-    process.stderr.write(`${c.red('error:')} No .clawsec/scans/ directory found. Run ${c.cyan('clawsec init')} first.\n`);
+    process.stderr.write(`${c.red('error:')} No .preflight/scans/ directory found. Run ${c.cyan('preflight init')} first.\n`);
     process.exit(2);
   }
 
   const htmlPath = path.join(scans, 'report.html');
   if (!existsSync(htmlPath)) {
-    process.stderr.write(`${c.red('error:')} No scan report found. Run ${c.cyan('clawsec scan')} first.\n`);
+    process.stderr.write(`${c.red('error:')} No scan report found. Run ${c.cyan('preflight scan')} first.\n`);
     process.exit(2);
   }
 
-  const actualPort = await startDashboardServer(cwd, port);
+  copyDashboardAssets(cwd);
+
+  const actualPort = await startDashboardServer(cwd, port, host);
 
   console.log('');
-  console.log(`  ${c.bold('ClawSec Dashboard')}`);
-  console.log(`  ${c.cyan(`http://localhost:${actualPort}`)}`);
+  console.log(`  ${c.bold('Preflight Dashboard')}`);
+  const displayHost = host === '0.0.0.0' ? 'localhost' : host;
+  console.log(`  ${c.cyan(`http://${displayHost}:${actualPort}`)}`);
   console.log('');
   console.log(`  ${c.dim('Press Ctrl+C to stop')}`);
   console.log('');
 
-  openBrowser(`http://localhost:${actualPort}`);
+  openBrowser(`http://${displayHost}:${actualPort}`);
 }
 
 // ============================================================================
@@ -1021,7 +1302,7 @@ function formatCompactSummary(result: ScanResult): string {
 
   // Score
   const colorFn = score >= 90 ? c.green : score >= 70 ? c.yellow : c.red;
-  lines.push(c.bold(`  ClawSec Security Score: ${colorFn(`${score}/100`)}`));
+  lines.push(c.bold(`  Preflight Security Score: ${colorFn(`${score}/100`)}`));
   lines.push(`  ${compactScoreBar(score)}`);
   lines.push('');
 
@@ -1046,8 +1327,9 @@ function formatCompactSummary(result: ScanResult): string {
   for (const f of top) {
     const colorize = severityColor[f.severity] ?? c.dim;
     const sev = colorize(f.severity.toUpperCase().padEnd(8));
-    const name = f.ruleName;
-    const file = c.dim(f.location.file.split('/').slice(-2).join('/') + ':' + f.location.startLine);
+    const name = sanitizeForTerminal(f.ruleName);
+    const safeFile = sanitizeForTerminal(f.location.file);
+    const file = c.dim(safeFile.split('/').slice(-2).join('/') + ':' + f.location.startLine);
     lines.push(`    ${sev}  ${name}`);
     lines.push(`    ${c.dim(' '.repeat(8))}  ${file}`);
   }
@@ -1097,7 +1379,7 @@ async function main(): Promise<void> {
   }
 
   if (rawArgs.version) {
-    console.log(`clawsec ${VERSION}`);
+    console.log(`preflight ${VERSION}`);
     process.exit(0);
   }
 
@@ -1107,7 +1389,7 @@ async function main(): Promise<void> {
     : null;
 
   if (config && !rawArgs.quiet && !isInteractive(rawArgs.quiet)) {
-    process.stderr.write(`${c.dim('Using')} ${CLAWSEC_DIR}/${SETTINGS_FILENAME}\n`);
+    process.stderr.write(`${c.dim('Using')} ${PREFLIGHT_DIR}/${SETTINGS_FILENAME}\n`);
   }
 
   const args = mergeConfigWithArgs(config, rawArgs);
@@ -1134,21 +1416,8 @@ async function main(): Promise<void> {
 
       case 'scan': {
         const cwd = process.cwd();
-        const format = args.format || 'table';
-        const options: ScanOptions = {
-          paths: args.paths,
-          format,
-          output: args.output,
-          minSeverity: args.minSeverity,
-          severities: args.severities,
-          failOn: args.failOn,
-          scoreThreshold: args.scoreThreshold,
-          excludePatterns: args.excludePatterns,
-          enableRules: args.enableRules,
-          disableRules: args.disableRules,
-          ruleFiles: args.ruleFiles,
-          quiet: args.quiet,
-        };
+        const options = buildScanOptions(args);
+        const format = options.format || 'table';
 
         const interactive = isInteractive(args.quiet) && format === 'table';
         let result: ScanResult;
@@ -1178,7 +1447,7 @@ async function main(): Promise<void> {
 
         // Write scan artifacts to disk
         if (!args.noOutput) {
-          ensureClawsecDir(cwd);
+          ensurePreflightDir(cwd);
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
           if (args.output) {
@@ -1221,6 +1490,7 @@ async function main(): Promise<void> {
             if (writeDashboard) {
               dashboardPath = path.join(scansDir(cwd), 'report.html');
               await writeFile(dashboardPath, formatDashboard(result));
+              copyDashboardAssets(cwd);
             }
 
             if (interactive) {
@@ -1230,21 +1500,22 @@ async function main(): Promise<void> {
               }
               if (dashboardPath) {
                 // Start dashboard server so Mark Safe and future features work
-                const actualPort = await startDashboardServer(cwd, args.port);
-                const dashUrl = `http://localhost:${actualPort}`;
+                const actualPort = await startDashboardServer(cwd, args.port, args.host);
+                const dashHost = args.host === '0.0.0.0' ? 'localhost' : args.host;
+                const dashUrl = `http://${dashHost}:${actualPort}`;
                 const clickable = link(c.cyan(dashUrl), dashUrl);
                 p.log.step(`Dashboard: ${clickable}`);
                 openBrowser(dashUrl);
               }
             } else if (!args.quiet) {
-              process.stderr.write(`${c.dim('Wrote')} ${CLAWSEC_DIR}/${SCANS_DIR}/latest.json\n`);
+              process.stderr.write(`${c.dim('Wrote')} ${PREFLIGHT_DIR}/${SCANS_DIR}/latest.json\n`);
               if (agentJsonPath) {
                 process.stderr.write(`${c.dim('Agent JSON')} ${path.relative(cwd, agentJsonPath)}\n`);
                 process.stderr.write(`${c.dim('Agent MD')} ${path.relative(cwd, agentMdPath!)}\n`);
               }
               if (dashboardPath) {
                 const absPath = path.resolve(dashboardPath);
-                const clickable = link(`${CLAWSEC_DIR}/${SCANS_DIR}/report.html`, fileUrl(absPath));
+                const clickable = link(`${PREFLIGHT_DIR}/${SCANS_DIR}/report.html`, fileUrl(absPath));
                 process.stderr.write(`${c.dim('Dashboard')} ${clickable}\n`);
               }
             }
@@ -1273,13 +1544,13 @@ async function main(): Promise<void> {
       }
 
       case 'dashboard': {
-        await runDashboard(args.port);
+        await runDashboard(args.port, args.host);
         break;
       }
 
       case 'help': {
         if (isInteractive(args.quiet)) {
-          p.intro(`${c.bold('ClawSec')}${c.dim(' v' + VERSION)}`);
+          p.intro(`${c.bold('Preflight')}${c.dim(' v' + VERSION)}`);
           console.log(HELP);
           p.outro('');
         } else {
@@ -1291,19 +1562,19 @@ async function main(): Promise<void> {
 
       case 'default': {
         if (isInteractive(args.quiet)) {
-          p.intro(`${c.bold('ClawSec')}${c.dim(' v' + VERSION)}`);
+          p.intro(`${c.bold('Preflight')}${c.dim(' v' + VERSION)}`);
           p.note(
             `Security scanner for AI agents, prompts, and vibecoded projects.\n\n` +
             `Get started:\n` +
-            `  ${c.cyan('clawsec init')}           Set up .clawsec/ in this project\n` +
-            `  ${c.cyan('clawsec scan')} [path]    Run a security scan\n` +
-            `  ${c.cyan('clawsec rules')}          List available rules\n` +
-            `  ${c.cyan('clawsec dashboard')}      View results in browser\n\n` +
+            `  ${c.cyan('preflight init')}           Set up .preflight/ in this project\n` +
+            `  ${c.cyan('preflight scan')} [path]    Run a security scan\n` +
+            `  ${c.cyan('preflight rules')}          List available rules\n` +
+            `  ${c.cyan('preflight dashboard')}      View results in browser\n\n` +
             `All options:\n` +
-            `  ${c.cyan('clawsec help')}           Show detailed help`,
+            `  ${c.cyan('preflight help')}           Show detailed help`,
             'Quick Start',
           );
-          p.outro(c.dim('https://github.com/agentsauthority/clawsec'));
+          p.outro(c.dim('https://github.com/iankiku/preflight'));
         } else {
           console.log(HELP);
         }
