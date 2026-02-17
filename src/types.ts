@@ -51,6 +51,8 @@ export interface RegexPattern {
   type: 'regex';
   regex: string;
   flags?: string;
+  /** Regex patterns that suppress a match when found on the same line */
+  excludePatterns?: string[];
 }
 
 export interface FrontmatterPattern {

@@ -185,6 +185,19 @@ function matchRegexInRegion(
       const endLine = getLineNumber(file.content, absolutePos + matchText.length);
       const startColumn = getColumnNumber(file.content, absolutePos);
 
+      // Exclude-pattern suppression: skip if the matched line also matches any exclude regex
+      if (pattern.excludePatterns && pattern.excludePatterns.length > 0) {
+        const lines = file.content.split('\n');
+        const matchedLine = lines[startLine - 1] || '';
+        const excluded = pattern.excludePatterns.some((ep) => {
+          try { return new RegExp(ep, 'i').test(matchedLine); } catch { return false; }
+        });
+        if (excluded) {
+          if (match.index === regex.lastIndex) regex.lastIndex++;
+          continue;
+        }
+      }
+
       const id = findingId(rule.id, file.path, startLine, startColumn);
       const snippet = matchText.slice(0, 200);
       const message = rule.message.replace(/\{match\}/g, matchText.slice(0, 100));
